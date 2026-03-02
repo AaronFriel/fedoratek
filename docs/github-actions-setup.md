@@ -29,6 +29,7 @@ Get token material from COPR API page:
 ## Workflow behavior
 
 - `copr-builds.yml`
+  - Ensures COPR project/package SCM config matches this repo before triggering rebuilds.
   - Push to `main` touching packaging/scripts/workflow files: triggers `COPR_PUSH_TARGET` (default `stable`).
   - Daily cron: triggers `COPR_SCHEDULE_TARGET` (default `both`).
   - Manual dispatch: choose testing/stable/both.

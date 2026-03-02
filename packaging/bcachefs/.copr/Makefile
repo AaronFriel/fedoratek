@@ -3,6 +3,7 @@ SHELL := /bin/bash
 DISTGIT_URL ?= https://src.fedoraproject.org/rpms/bcachefs-tools.git
 DISTGIT_REF ?= rawhide
 BCACHEFS_RPMBUILD_FLAGS ?= --with dkms
+BCACHEFS_FORCE_DKMS ?= 1
 
 .PHONY: srpm
 srpm:
@@ -15,6 +16,9 @@ srpm:
 	fi; \
 	git clone --depth 1 --branch "$(DISTGIT_REF)" "$(DISTGIT_URL)" "$$work/src"; \
 	cd "$$work/src"; \
+	if [[ "$(BCACHEFS_FORCE_DKMS)" == "1" ]]; then \
+	  sed -i -E 's/^%bcond[[:space:]]+dkms[[:space:]]+0/%bcond dkms 1/' bcachefs-tools.spec; \
+	fi; \
 	spectool -g -R bcachefs-tools.spec; \
 	rpmbuild -bs bcachefs-tools.spec \
 	  $(BCACHEFS_RPMBUILD_FLAGS) \

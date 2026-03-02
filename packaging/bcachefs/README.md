@@ -8,4 +8,4 @@ Entry point used by COPR:
 
 Current implementation builds SRPM from Fedora dist-git `rpms/bcachefs-tools` (configurable via env).
 
-Default SRPM generation enables DKMS subpackage output (`--with dkms`), so COPR can publish both userspace tools and `dkms-bcachefs`.
+Default SRPM generation enables DKMS subpackage output (`--with dkms`) and rewrites `%bcond dkms` to default-on in the generated SRPM, so COPR can publish both userspace tools and `dkms-bcachefs`.
