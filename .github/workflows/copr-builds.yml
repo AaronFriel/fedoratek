@@ -1,0 +1,85 @@
+name: COPR Builds
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "packaging/**"
+      - "scripts/copr_*.sh"
+      - ".github/workflows/copr-builds.yml"
+  schedule:
+    - cron: "27 4 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which COPR project(s) to build"
+        required: true
+        default: "testing"
+        type: choice
+        options:
+          - testing
+          - stable
+          - both
+
+jobs:
+  trigger-copr-builds:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:43
+
+    env:
+      COPR_OWNER: ${{ vars.COPR_OWNER }}
+      COPR_PROJECT_TESTING: ${{ vars.COPR_PROJECT_TESTING }}
+      COPR_PROJECT_STABLE: ${{ vars.COPR_PROJECT_STABLE }}
+      COPR_TARGET_CHROOTS: ${{ vars.COPR_TARGET_CHROOTS }}
+      COPR_SCHEDULE_TARGET: ${{ vars.COPR_SCHEDULE_TARGET }}
+      COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
+      COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
+      COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          dnf -y install copr-cli git
+
+      - name: Configure copr-cli auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${COPR_LOGIN:?Missing COPR_LOGIN secret}"
+          : "${COPR_USERNAME:?Missing COPR_USERNAME secret}"
+          : "${COPR_TOKEN:?Missing COPR_TOKEN secret}"
+          mkdir -p ~/.config
+          cat > ~/.config/copr <<CONF
+          [copr-cli]
+          login = ${COPR_LOGIN}
+          username = ${COPR_USERNAME}
+          token = ${COPR_TOKEN}
+          copr_url = https://copr.fedorainfracloud.org
+          CONF
+          chmod 600 ~/.config/copr
+
+      - name: Trigger builds
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export COPR_OWNER="${COPR_OWNER:-friel}"
+          export COPR_PROJECT_TESTING="${COPR_PROJECT_TESTING:-storage-modules-testing}"
+          export COPR_PROJECT_STABLE="${COPR_PROJECT_STABLE:-storage-modules-stable}"
+          export COPR_SCHEDULE_TARGET="${COPR_SCHEDULE_TARGET:-both}"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            export COPR_TARGET_PROJECTS="${{ github.event.inputs.target }}"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            export COPR_TARGET_PROJECTS="${COPR_SCHEDULE_TARGET}"
+          else
+            export COPR_TARGET_PROJECTS="testing"
+          fi
+
+          ./scripts/copr_rebuild_all.sh

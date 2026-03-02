@@ -1,0 +1,10 @@
+# Local planning/research/vendor workbench
+plans/
+research/
+third-party/
+
+# Local RPM build artifacts
+*.rpm
+*.src.rpm
+rpmbuild/
+_build/
