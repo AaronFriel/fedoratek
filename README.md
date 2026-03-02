@@ -14,11 +14,13 @@ Control-plane repo for building and publishing Fedora storage module packages (b
 ## Quick Start
 
 1. Configure GitHub repository variables/secrets (see [`docs/github-actions-setup.md`](docs/github-actions-setup.md)).
-2. Bootstrap COPR projects + package sources:
+2. Bootstrap COPR package sources for `fedoratek-stable`:
 
 ```bash
 scripts/copr_bootstrap_projects.sh
 ```
+
+To bootstrap both testing+stable instead: `make bootstrap-both`
 
 3. Trigger initial builds (manual):
 

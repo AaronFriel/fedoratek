@@ -2,12 +2,12 @@
 
 Use this for both projects:
 
-- `storage-modules-testing`
-- `storage-modules-stable`
+- `fedoratek-testing`
+- `fedoratek-stable`
 
 ## 1) Project information
 
-- Project Name: `storage-modules-testing` (or `storage-modules-stable`)
+- Project Name: `fedoratek-testing` (or `fedoratek-stable`)
 - Description: short text (for example `Fedora bcachefs + ZFS module builds`)
 - Instructions: include `dnf copr enable <owner>/<project>` and package install examples
 - Homepage/Contact: your GitHub repo/issue tracker

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 COPR_OWNER="${COPR_OWNER:-friel}"
-COPR_PROJECT_TESTING="${COPR_PROJECT_TESTING:-storage-modules-testing}"
-COPR_PROJECT_STABLE="${COPR_PROJECT_STABLE:-storage-modules-stable}"
-COPR_TARGET_PROJECTS="${COPR_TARGET_PROJECTS:-testing}"
+COPR_PROJECT_TESTING="${COPR_PROJECT_TESTING:-fedoratek-testing}"
+COPR_PROJECT_STABLE="${COPR_PROJECT_STABLE:-fedoratek-stable}"
+COPR_TARGET_PROJECTS="${COPR_TARGET_PROJECTS:-stable}"
 COPR_TARGET_CHROOTS="${COPR_TARGET_CHROOTS:-}"
 
 PROJECTS=()
@@ -38,4 +38,3 @@ for project in "${PROJECTS[@]}"; do
     fi
   done
 done
-

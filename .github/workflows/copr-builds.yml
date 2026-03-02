@@ -14,7 +14,7 @@ on:
       target:
         description: "Which COPR project(s) to build"
         required: true
-        default: "testing"
+        default: "stable"
         type: choice
         options:
           - testing
@@ -32,6 +32,7 @@ jobs:
       COPR_PROJECT_TESTING: ${{ vars.COPR_PROJECT_TESTING }}
       COPR_PROJECT_STABLE: ${{ vars.COPR_PROJECT_STABLE }}
       COPR_TARGET_CHROOTS: ${{ vars.COPR_TARGET_CHROOTS }}
+      COPR_PUSH_TARGET: ${{ vars.COPR_PUSH_TARGET }}
       COPR_SCHEDULE_TARGET: ${{ vars.COPR_SCHEDULE_TARGET }}
       COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
       COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
@@ -70,8 +71,9 @@ jobs:
           set -euo pipefail
 
           export COPR_OWNER="${COPR_OWNER:-friel}"
-          export COPR_PROJECT_TESTING="${COPR_PROJECT_TESTING:-storage-modules-testing}"
-          export COPR_PROJECT_STABLE="${COPR_PROJECT_STABLE:-storage-modules-stable}"
+          export COPR_PROJECT_TESTING="${COPR_PROJECT_TESTING:-fedoratek-testing}"
+          export COPR_PROJECT_STABLE="${COPR_PROJECT_STABLE:-fedoratek-stable}"
+          export COPR_PUSH_TARGET="${COPR_PUSH_TARGET:-stable}"
           export COPR_SCHEDULE_TARGET="${COPR_SCHEDULE_TARGET:-both}"
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -79,7 +81,7 @@ jobs:
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             export COPR_TARGET_PROJECTS="${COPR_SCHEDULE_TARGET}"
           else
-            export COPR_TARGET_PROJECTS="testing"
+            export COPR_TARGET_PROJECTS="${COPR_PUSH_TARGET}"
           fi
 
           ./scripts/copr_rebuild_all.sh

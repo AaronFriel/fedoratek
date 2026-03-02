@@ -2,17 +2,26 @@
 set -euo pipefail
 
 COPR_OWNER="${COPR_OWNER:-friel}"
-COPR_PROJECT_TESTING="${COPR_PROJECT_TESTING:-storage-modules-testing}"
-COPR_PROJECT_STABLE="${COPR_PROJECT_STABLE:-storage-modules-stable}"
+COPR_PROJECT_TESTING="${COPR_PROJECT_TESTING:-fedoratek-testing}"
+COPR_PROJECT_STABLE="${COPR_PROJECT_STABLE:-fedoratek-stable}"
 COPR_SCM_BRANCH="${COPR_SCM_BRANCH:-main}"
 COPR_REPO_URL="${COPR_REPO_URL:-https://github.com/aaronfriel/fedoratek.git}"
 COPR_TARGET_CHROOTS="${COPR_TARGET_CHROOTS:-fedora-43-x86_64,fedora-43-aarch64}"
 COPR_ENABLE_NET="${COPR_ENABLE_NET:-on}"
+COPR_BOOTSTRAP_TARGET_PROJECTS="${COPR_BOOTSTRAP_TARGET_PROJECTS:-stable}"
 
 case "${COPR_ENABLE_NET}" in
   on|off) ;;
   *)
     echo "Unsupported COPR_ENABLE_NET=${COPR_ENABLE_NET} (expected on|off)" >&2
+    exit 2
+    ;;
+esac
+
+case "${COPR_BOOTSTRAP_TARGET_PROJECTS}" in
+  testing|stable|both) ;;
+  *)
+    echo "Unsupported COPR_BOOTSTRAP_TARGET_PROJECTS=${COPR_BOOTSTRAP_TARGET_PROJECTS} (expected testing|stable|both)" >&2
     exit 2
     ;;
 esac
@@ -73,13 +82,27 @@ ensure_scm_package() {
 TESTING_REF="${COPR_OWNER}/${COPR_PROJECT_TESTING}"
 STABLE_REF="${COPR_OWNER}/${COPR_PROJECT_STABLE}"
 
-create_project_if_needed "${TESTING_REF}" "${COPR_PROJECT_TESTING}"
-create_project_if_needed "${STABLE_REF}" "${COPR_PROJECT_STABLE}"
+bootstrap_project() {
+  local owner_project="$1"
+  local project_name="$2"
+  local webhook_mode="$3"
 
-ensure_scm_package "${TESTING_REF}" "bcachefs-tools" "packaging/bcachefs" "on"
-ensure_scm_package "${TESTING_REF}" "zfs-dkms" "packaging/zfs" "on"
+  create_project_if_needed "${owner_project}" "${project_name}"
+  ensure_scm_package "${owner_project}" "bcachefs-tools" "packaging/bcachefs" "${webhook_mode}"
+  ensure_scm_package "${owner_project}" "zfs-dkms" "packaging/zfs" "${webhook_mode}"
+}
 
-ensure_scm_package "${STABLE_REF}" "bcachefs-tools" "packaging/bcachefs" "off"
-ensure_scm_package "${STABLE_REF}" "zfs-dkms" "packaging/zfs" "off"
+case "${COPR_BOOTSTRAP_TARGET_PROJECTS}" in
+  testing)
+    bootstrap_project "${TESTING_REF}" "${COPR_PROJECT_TESTING}" "on"
+    ;;
+  stable)
+    bootstrap_project "${STABLE_REF}" "${COPR_PROJECT_STABLE}" "off"
+    ;;
+  both)
+    bootstrap_project "${TESTING_REF}" "${COPR_PROJECT_TESTING}" "on"
+    bootstrap_project "${STABLE_REF}" "${COPR_PROJECT_STABLE}" "off"
+    ;;
+esac
 
 echo "Bootstrap complete."
