@@ -2,6 +2,7 @@ SHELL := /bin/bash
 
 DISTGIT_URL ?= https://src.fedoraproject.org/rpms/bcachefs-tools.git
 DISTGIT_REF ?= rawhide
+BCACHEFS_RPMBUILD_FLAGS ?= --with dkms
 
 .PHONY: srpm
 srpm:
@@ -16,6 +17,7 @@ srpm:
 	cd "$$work/src"; \
 	spectool -g -R bcachefs-tools.spec; \
 	rpmbuild -bs bcachefs-tools.spec \
+	  $(BCACHEFS_RPMBUILD_FLAGS) \
 	  --define "_sourcedir $$PWD" \
 	  --define "_srcrpmdir $$work/out"; \
 	mkdir -p "$$out"; \
