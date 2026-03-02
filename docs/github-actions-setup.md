@@ -18,8 +18,9 @@ Set these in GitHub -> Settings -> Secrets and variables -> Actions -> Variables
 Set these in GitHub -> Settings -> Secrets and variables -> Actions -> Secrets.
 
 - `COPR_LOGIN`
-- `COPR_USERNAME`
 - `COPR_TOKEN`
+
+`COPR_OWNER` is used as the `username` field in `~/.config/copr`, so it should match your Copr account/project owner (for example `friel`).
 
 Get token material from COPR API page:
 

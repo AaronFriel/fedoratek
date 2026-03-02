@@ -35,7 +35,6 @@ jobs:
       COPR_PUSH_TARGET: ${{ vars.COPR_PUSH_TARGET }}
       COPR_SCHEDULE_TARGET: ${{ vars.COPR_SCHEDULE_TARGET }}
       COPR_LOGIN: ${{ secrets.COPR_LOGIN }}
-      COPR_USERNAME: ${{ secrets.COPR_USERNAME }}
       COPR_TOKEN: ${{ secrets.COPR_TOKEN }}
 
     steps:
@@ -52,14 +51,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          : "${COPR_OWNER:?Missing COPR_OWNER variable}"
           : "${COPR_LOGIN:?Missing COPR_LOGIN secret}"
-          : "${COPR_USERNAME:?Missing COPR_USERNAME secret}"
           : "${COPR_TOKEN:?Missing COPR_TOKEN secret}"
           mkdir -p ~/.config
           cat > ~/.config/copr <<CONF
           [copr-cli]
           login = ${COPR_LOGIN}
-          username = ${COPR_USERNAME}
+          username = ${COPR_OWNER}
           token = ${COPR_TOKEN}
           copr_url = https://copr.fedorainfracloud.org
           CONF
