@@ -19,6 +19,7 @@ srpm:
 	  -e 's/^#define buildforkernels akmod/%define buildforkernels akmod/' \
 	  -e '/^%define buildforkernels akmod/a %global debug_package %{nil}' \
 	  -e '/^%global debug_package %{nil}/a %global _debugsource_packages 0' \
+	  -e '/^Requires:[[:space:]]*zfs-kmod-common >= /d' \
 	  -e 's/%{?kernels:--for-kernels "%{?kernels}"} //g' \
 	  -e 's#^chmod u+x .*#if ls ${RPM_BUILD_ROOT}%{kmodinstdir_prefix}/*/extra/*/* >/dev/null 2>\\&1; then chmod u+x ${RPM_BUILD_ROOT}%{kmodinstdir_prefix}/*/extra/*/*; fi#' \
 	  rpm/generic/zfs-kmod.spec; \
