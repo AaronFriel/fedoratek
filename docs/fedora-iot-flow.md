@@ -11,6 +11,10 @@ Current validation boundary:
 - `bcachefs-kmod` and `zfs-kmod` are currently proven only through SRPM
   generation. Treat first COPR binary builds and on-host `akmods` tests as the
   next validation step.
+- COPR SCM `make_srpm` builds one SRPM per package build, not one SRPM per
+  target chroot. If different Fedora releases need different packaging branches,
+  split them into separate package definitions or projects rather than trying to
+  auto-select a dist-git branch inside one package source.
 
 After COPR publishes packages:
 

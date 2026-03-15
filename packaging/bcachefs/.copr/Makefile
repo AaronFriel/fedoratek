@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 DISTGIT_URL ?= https://src.fedoraproject.org/rpms/bcachefs-tools.git
-DISTGIT_REF ?= rawhide
+DISTGIT_REF ?= f43
 BCACHEFS_RPMBUILD_FLAGS ?= --with dkms
 BCACHEFS_FORCE_DKMS ?= 1
 

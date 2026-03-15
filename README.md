@@ -49,6 +49,10 @@ Current validation boundary:
 - `bcachefs-kmod` and `zfs-kmod` both generate real Fedora 43 SRPMs.
 - Fedora IoT layering of the DKMS packages is not a viable path; keep those for
   mutable Fedora systems and comparison work.
+- COPR SCM `make_srpm` builds one SRPM per package build, so each package source
+  should track one Fedora dist-git line at a time. The bcachefs package sources
+  are currently pinned to Fedora 43 (`f43`), matching the default target
+  chroots.
 
 ## COPR Form Defaults (If Creating Manually)
 

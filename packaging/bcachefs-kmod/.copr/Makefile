@@ -4,7 +4,7 @@ PACKAGE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 SPEC_TEMPLATE := $(PACKAGE_DIR)/bcachefs-kmod.spec.in
 
 DISTGIT_URL ?= https://src.fedoraproject.org/rpms/bcachefs-tools.git
-DISTGIT_REF ?= rawhide
+DISTGIT_REF ?= f43
 SOURCE_BASE_URL ?= https://evilpiepirate.org/bcachefs-tools
 
 .PHONY: srpm
