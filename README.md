@@ -31,6 +31,33 @@ scripts/copr_rebuild_all.sh
 
 4. For Fedora IoT compose/deploy guidance, see [`docs/fedora-iot-flow.md`](docs/fedora-iot-flow.md).
 
+## Fast Iteration
+
+You do not need to wait on COPR for every packaging mistake.
+
+Simulate a COPR package build locally in a Fedora container:
+
+```bash
+scripts/local_copr_build.sh packaging/bcachefs-kmod
+scripts/local_copr_build.sh --srpm-only packaging/bcachefs
+```
+
+This runs the package's `.copr/Makefile` in a Fedora container, generates the
+SRPM, and by default also rebuilds that SRPM locally to approximate COPR's
+binary-RPM phase. Use `--arch aarch64` when your container runtime supports
+multi-arch emulation.
+
+Poll public COPR builds and fetch logs without `copr-cli`:
+
+```bash
+scripts/copr_public_watch.py friel/fedoratek-stable --package bcachefs-kmod
+scripts/copr_public_watch.py friel/fedoratek-stable --build-id 10228721 --show-log build.log --chroot fedora-43-x86_64
+scripts/copr_public_watch.py friel/fedoratek-stable --package zfs-kmod --download-dir .scratch/copr-logs
+```
+
+The watcher uses only public COPR APIs and result URLs, so it works for failed
+public builds without any COPR credentials.
+
 ## Current COPR Package Sources
 
 This repo currently registers four COPR SCM package definitions:
