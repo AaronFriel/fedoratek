@@ -8,9 +8,15 @@ Current validation boundary:
 - `dkms-bcachefs` and `zfs-dkms` are not a sound Fedora IoT delivery path.
   `rpm-ostree` layering and later live DKMS installs both hit read-only
   filesystem constraints on Fedora IoT.
-- `bcachefs-kmod` and `zfs-kmod` are currently proven only through SRPM
-  generation. Treat first COPR binary builds and on-host `akmods` tests as the
-  next validation step.
+- `bcachefs-kmod` is now proven by live COPR builds on
+  `fedora-43-x86_64` and `fedora-43-aarch64`.
+- `zfs-kmod` is now proven by live COPR builds on
+  `fedora-43-x86_64`, `fedora-43-aarch64`, and `fedora-44-x86_64`.
+- `bcachefs-tools` is currently Fedora-43-only in practice; Fedora 44 and
+  rawhide chroots fail with the current Fedora dist-git/package state.
+- `zfs-kmod` currently fails on Fedora 44 aarch64 and rawhide chroots, so treat
+  those as unsupported until upstream OpenZFS support changes or packaging
+  workarounds are added.
 - COPR SCM `make_srpm` builds one SRPM per package build, not one SRPM per
   target chroot. If different Fedora releases need different packaging branches,
   split them into separate package definitions or projects rather than trying to

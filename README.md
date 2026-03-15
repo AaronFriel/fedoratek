@@ -73,13 +73,31 @@ mutable Fedora systems and comparison work.
 
 Current validation boundary:
 
-- `bcachefs-kmod` and `zfs-kmod` both generate real Fedora 43 SRPMs.
+- `bcachefs-kmod` now completes live COPR builds on `fedora-43-x86_64` and
+  `fedora-43-aarch64`.
+- `bcachefs-tools` currently succeeds on `fedora-43-x86_64` and
+  `fedora-43-aarch64`, and fails on Fedora 44 and rawhide chroots.
+- `zfs-kmod` currently succeeds on `fedora-43-x86_64`,
+  `fedora-43-aarch64`, and `fedora-44-x86_64`, and fails on Fedora 44
+  aarch64 and rawhide.
 - Fedora IoT layering of the DKMS packages is not a viable path; keep those for
   mutable Fedora systems and comparison work.
 - COPR SCM `make_srpm` builds one SRPM per package build, so each package source
   should track one Fedora dist-git line at a time. The bcachefs package sources
   are currently pinned to Fedora 43 (`f43`), matching the default target
   chroots.
+
+Default rebuild behavior in `scripts/copr_rebuild_all.sh` now uses
+package-specific chroot lists:
+
+- `bcachefs-tools`: `fedora-43-x86_64,fedora-43-aarch64`
+- `bcachefs-kmod`: `fedora-43-x86_64,fedora-43-aarch64`
+- `zfs-dkms`: all enabled project chroots
+- `zfs-kmod`: `fedora-43-x86_64,fedora-43-aarch64,fedora-44-x86_64`
+
+Set `COPR_TARGET_CHROOTS` to override all packages at once, or set
+package-specific variables such as `COPR_CHROOTS_ZFS_KMOD` to override one
+package.
 
 ## COPR Form Defaults (If Creating Manually)
 

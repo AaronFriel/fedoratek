@@ -18,7 +18,14 @@ Pick only Fedora chroots you actually need now:
 
 - `fedora-43-x86_64`
 - `fedora-43-aarch64`
-- optional: `fedora-rawhide-x86_64`, `fedora-rawhide-aarch64`
+
+If you want ZFS akmod coverage beyond Fedora 43, also add:
+
+- `fedora-44-x86_64`
+
+Avoid enabling rawhide by default for this repo right now. Current live COPR
+results show `zfs-kmod` fails on rawhide and `bcachefs-tools` currently fails on
+Fedora 44/rawhide with the present upstream/dist-git state.
 
 Leave `External Repositories` empty initially.
 
