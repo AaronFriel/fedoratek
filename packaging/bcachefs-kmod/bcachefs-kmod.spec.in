@@ -34,8 +34,17 @@ This package contains the common files for the bcachefs akmod package.
 kmodtool --target %{_target_cpu} --repo rpmfusion --kmodname %{_name} %{?buildforkernels:--%{buildforkernels}} %{?kernels:--for-kernels "%{?kernels}"} 2>/dev/null
 
 %setup -q -n @TOPDIR@
-%make_build generate_version dkms/dkms.conf
-%make_build install_dkms DKMSDIR="%{_builddir}/%{name}-%{version}/_akmod_src"
+printf '%{version}\n' > .version
+printf '#define bcachefs_version "%{version}"\n' > version.h
+sed 's|@PACKAGE_VERSION@|%{version}|g' dkms/dkms.conf.in > dkms/dkms.conf
+mkdir -p "%{_builddir}/%{name}-%{version}/_akmod_src/src/fs/bcachefs"
+install -m0644 dkms/Makefile "%{_builddir}/%{name}-%{version}/_akmod_src/"
+install -m0644 dkms/dkms.conf "%{_builddir}/%{name}-%{version}/_akmod_src/"
+install -m0644 libbcachefs/Makefile "%{_builddir}/%{name}-%{version}/_akmod_src/src/fs/bcachefs/"
+find libbcachefs -name '*.[ch]' -exec install -D -m0644 {} "%{_builddir}/%{name}-%{version}/_akmod_src/src/fs/bcachefs/{}" \;
+install -m0644 dkms/module-version.c "%{_builddir}/%{name}-%{version}/_akmod_src/src/fs/bcachefs/"
+install -m0644 version.h "%{_builddir}/%{name}-%{version}/_akmod_src/src/fs/bcachefs/"
+sed -i 's|^#define TRACE_INCLUDE_PATH \.\./\.\./fs/bcachefs$|#define TRACE_INCLUDE_PATH .|' "%{_builddir}/%{name}-%{version}/_akmod_src/src/fs/bcachefs/debug/trace.h"
 for kernel_version in %{?kernel_versions}; do
   cp -a "%{_builddir}/%{name}-%{version}/_akmod_src" "%{_builddir}/%{name}-%{version}/_kmod_build_${kernel_version%%___*}"
 done
