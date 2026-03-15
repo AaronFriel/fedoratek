@@ -128,7 +128,7 @@ if [[ -n "$platform" ]]; then
   container_args+=(--platform "$platform")
 fi
 
-pass_env_vars=(DISTGIT_URL DISTGIT_REF SOURCE_BASE_URL OPENZFS_REPO OPENZFS_REF)
+pass_env_vars=(DISTGIT_URL DISTGIT_REF SOURCE_BASE_URL OPENZFS_REPO OPENZFS_REF BCACHEFS_UPSTREAM_VERSION)
 for name in "${pass_env_vars[@]}"; do
   if [[ -n "${!name:-}" ]]; then
     container_args+=(-e "$name=${!name}")

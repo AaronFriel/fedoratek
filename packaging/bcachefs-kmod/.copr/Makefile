@@ -5,6 +5,7 @@ SPEC_TEMPLATE := $(PACKAGE_DIR)/bcachefs-kmod.spec.in
 
 DISTGIT_URL ?= https://src.fedoraproject.org/rpms/bcachefs-tools.git
 DISTGIT_REF ?= f43
+BCACHEFS_UPSTREAM_VERSION ?= 1.37.0
 SOURCE_BASE_URL ?= https://evilpiepirate.org/bcachefs-tools
 
 .PHONY: srpm
@@ -16,7 +17,7 @@ srpm:
 	dnf -y install curl git kmodtool rpm-build rpmdevtools tar zstd >/dev/null; \
 	git clone --depth 1 --branch "$(DISTGIT_REF)" "$(DISTGIT_URL)" "$$work/distgit"; \
 	cd "$$work/distgit"; \
-	version="$$(rpmspec -q --srpm --qf '%{VERSION}' bcachefs-tools.spec)"; \
+	version="$(BCACHEFS_UPSTREAM_VERSION)"; \
 	source_name="bcachefs-tools-vendored-$$version.tar.zst"; \
 	source_path="$$work/$$source_name"; \
 	curl -fsSL "$(SOURCE_BASE_URL)/$$source_name" -o "$$source_path"; \
