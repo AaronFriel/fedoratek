@@ -89,7 +89,9 @@ bootstrap_project() {
 
   create_project_if_needed "${owner_project}" "${project_name}"
   ensure_scm_package "${owner_project}" "bcachefs-tools" "packaging/bcachefs" "${webhook_mode}"
+  ensure_scm_package "${owner_project}" "bcachefs-kmod" "packaging/bcachefs-kmod" "${webhook_mode}"
   ensure_scm_package "${owner_project}" "zfs-dkms" "packaging/zfs" "${webhook_mode}"
+  ensure_scm_package "${owner_project}" "zfs-kmod" "packaging/zfs-kmod" "${webhook_mode}"
 }
 
 case "${COPR_BOOTSTRAP_TARGET_PROJECTS}" in

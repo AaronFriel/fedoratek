@@ -22,7 +22,7 @@ case "${COPR_TARGET_PROJECTS}" in
 esac
 
 IFS=',' read -r -a CHROOTS <<< "${COPR_TARGET_CHROOTS}"
-PACKAGES=(bcachefs-tools zfs-dkms)
+PACKAGES=(bcachefs-tools bcachefs-kmod zfs-dkms zfs-kmod)
 
 for project in "${PROJECTS[@]}"; do
   for pkg in "${PACKAGES[@]}"; do

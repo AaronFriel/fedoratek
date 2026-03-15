@@ -12,14 +12,24 @@ srpm:
 	  packaging/bcachefs|\
 	  packaging/bcachefs/*) \
 	    target_makefile="$(REPO_ROOT)/packaging/bcachefs/.copr/Makefile" ;; \
+	  "$(REPO_ROOT)"/packaging/bcachefs-kmod|\
+	  "$(REPO_ROOT)"/packaging/bcachefs-kmod/*|\
+	  packaging/bcachefs-kmod|\
+	  packaging/bcachefs-kmod/*) \
+	    target_makefile="$(REPO_ROOT)/packaging/bcachefs-kmod/.copr/Makefile" ;; \
 	  "$(REPO_ROOT)"/packaging/zfs|\
 	  "$(REPO_ROOT)"/packaging/zfs/*|\
 	  packaging/zfs|\
 	  packaging/zfs/*) \
 	    target_makefile="$(REPO_ROOT)/packaging/zfs/.copr/Makefile" ;; \
+	  "$(REPO_ROOT)"/packaging/zfs-kmod|\
+	  "$(REPO_ROOT)"/packaging/zfs-kmod/*|\
+	  packaging/zfs-kmod|\
+	  packaging/zfs-kmod/*) \
+	    target_makefile="$(REPO_ROOT)/packaging/zfs-kmod/.copr/Makefile" ;; \
 	  *) \
 	    echo "Unsupported spec/subdirectory '$$subdir'." >&2; \
-	    echo "Expected packaging/bcachefs or packaging/zfs." >&2; \
+	    echo "Expected packaging/bcachefs, packaging/bcachefs-kmod, packaging/zfs, or packaging/zfs-kmod." >&2; \
 	    exit 2 ;; \
 	esac; \
 	exec $(MAKE) -f "$$target_makefile" srpm outdir="$(outdir)" spec="$(spec)"

@@ -1,0 +1,70 @@
+%global buildforkernels akmod
+%global debug_package %{nil}
+%global _name bcachefs
+
+Name:           %{_name}-kmod
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        Bcachefs kernel module
+License:        GPL-2.0-only
+URL:            https://bcachefs.org/
+Source0:        @SOURCE0@
+
+BuildRequires:  gcc
+BuildRequires:  kmodtool
+BuildRequires:  make
+
+%{expand:%(kmodtool --target %{_target_cpu} --repo rpmfusion --kmodname %{_name} %{?buildforkernels:--%{buildforkernels}} %{?kernels:--for-kernels "%{?kernels}"} 2>/dev/null) }
+
+%description
+This package provides the bcachefs kernel module source in akmod form.
+
+%package common
+Summary:        Common files for the bcachefs kernel module
+BuildArch:      noarch
+Requires:       bcachefs-tools >= %{version}
+
+%description common
+This package contains the common files for the bcachefs akmod package.
+
+%prep
+%{?kmodtool_check}
+
+# Print kmodtool output for debugging purposes.
+kmodtool --target %{_target_cpu} --repo rpmfusion --kmodname %{_name} %{?buildforkernels:--%{buildforkernels}} %{?kernels:--for-kernels "%{?kernels}"} 2>/dev/null
+
+%setup -q -n @TOPDIR@
+%make_build generate_version dkms/dkms.conf
+%make_build install_dkms DKMSDIR="%{_builddir}/%{name}-%{version}/_akmod_src"
+for kernel_version in %{?kernel_versions}; do
+  cp -a "%{_builddir}/%{name}-%{version}/_akmod_src" "%{_builddir}/%{name}-%{version}/_kmod_build_${kernel_version%%___*}"
+done
+
+%build
+for kernel_version in %{?kernel_versions}; do
+  make %{?_smp_mflags} \
+    -C ${kernel_version##*___} \
+    M="%{_builddir}/%{name}-%{version}/_kmod_build_${kernel_version%%___*}" \
+    -f "%{_builddir}/%{name}-%{version}/_kmod_build_${kernel_version%%___*}/Makefile" \
+    modules
+done
+
+%install
+rm -rf %{buildroot}
+for kernel_version in %{?kernel_versions}; do
+  make \
+    -C ${kernel_version##*___} \
+    M="%{_builddir}/%{name}-%{version}/_kmod_build_${kernel_version%%___*}" \
+    -f "%{_builddir}/%{name}-%{version}/_kmod_build_${kernel_version%%___*}/Makefile" \
+    INSTALL_MOD_PATH=%{buildroot} \
+    INSTALL_MOD_DIR=%{kmodinstdir_postfix} \
+    modules_install
+done
+%{?akmod_install}
+
+%files common
+%license COPYING
+
+%changelog
+* Sat Mar 14 2026 Fedoratek <noreply@example.invalid> - @VERSION@-1
+- Initial akmod packaging for bcachefs

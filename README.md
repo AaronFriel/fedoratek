@@ -10,6 +10,7 @@ Control-plane repo for building and publishing Fedora storage module packages (b
   - push to `main`
   - manual dispatch
   - scheduled cron rebuilds (daily, configurable target project set)
+- Builds both legacy DKMS-oriented packages and parallel akmod-oriented kernel module packages.
 
 ## Quick Start
 
@@ -29,6 +30,25 @@ scripts/copr_rebuild_all.sh
 ```
 
 4. For Fedora IoT compose/deploy guidance, see [`docs/fedora-iot-flow.md`](docs/fedora-iot-flow.md).
+
+## Current COPR Package Sources
+
+This repo currently registers four COPR SCM package definitions:
+
+- `bcachefs-tools` from [`packaging/bcachefs`](packaging/bcachefs/README.md)
+- `bcachefs-kmod` from [`packaging/bcachefs-kmod`](packaging/bcachefs-kmod/README.md)
+- `zfs-dkms` from [`packaging/zfs`](packaging/zfs/README.md)
+- `zfs-kmod` from [`packaging/zfs-kmod`](packaging/zfs-kmod/README.md)
+
+The `*-kmod` source packages are intended to emit akmod-oriented outputs
+alongside kmod metadata, while the original DKMS paths remain in place for
+mutable Fedora systems and comparison work.
+
+Current validation boundary:
+
+- `bcachefs-kmod` and `zfs-kmod` both generate real Fedora 43 SRPMs.
+- Fedora IoT layering of the DKMS packages is not a viable path; keep those for
+  mutable Fedora systems and comparison work.
 
 ## COPR Form Defaults (If Creating Manually)
 
