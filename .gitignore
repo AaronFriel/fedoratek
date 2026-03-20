@@ -8,3 +8,5 @@ third-party/
 *.src.rpm
 rpmbuild/
 _build/
+out/
+.scratch/

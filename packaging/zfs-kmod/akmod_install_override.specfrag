@@ -1,7 +1,8 @@
 # BEGIN FEDORATEK AKMOD_INSTALL OVERRIDE
 %global akmod_install mkdir -p $RPM_BUILD_ROOT/%{_usrsrc}/akmods/; \
 tmp_spec="$(mktemp ./zfs-kmod.inner.XXXXXX.spec)"; \
-cp %{_specdir}/%{name}.spec "$tmp_spec"; \
+spec_src="$(echo %{_specdir}/*.spec)"; \
+cp "$spec_src" "$tmp_spec"; \
 %{SOURCE11} "$tmp_spec"; \
 LANG=C rpmbuild --define "_sourcedir %{_sourcedir}" --define "_srcrpmdir $RPM_BUILD_ROOT/%{_usrsrc}/akmods/" -bs --nodeps "$tmp_spec"; \
 rm -f "$tmp_spec"; \
