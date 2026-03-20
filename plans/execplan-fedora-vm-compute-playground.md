@@ -6,75 +6,81 @@ This repository does not contain a `PLANS.md` file. Maintain this document in ac
 
 ## Purpose / Big Picture
 
-The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host that can run several kinds of compute services: nested KVM virtual machines, remotely controlled libvirt guests through Cockpit, ordinary OCI containers through Podman, Firecracker microVM experiments, and a lightweight Kubernetes environment for local cluster experiments. After this work, a novice should be able to log into the host, see `/dev/kvm`, use Cockpit to create or inspect virtual machines, run Podman containers, and follow a documented path for Firecracker and Kubernetes experiments without guessing package names or host prerequisites.
+The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host that can run several kinds of compute services: nested KVM virtual machines, remotely controlled libvirt guests through Cockpit, ordinary OCI containers through Podman, Firecracker microVM experiments, Kata-based VM-isolated containers, and a lightweight Kubernetes environment for local cluster experiments. After this work, a novice should be able to log into the host, see `/dev/kvm`, use Cockpit to create or inspect virtual machines, run Podman containers, run a Kata-backed container, boot a Firecracker guest, and follow a documented path for a lightweight Kubernetes cluster without guessing package names or host prerequisites.
 
 ## Progress
 
 - [x] (2026-03-20 17:15Z) Captured the current host baseline on `10.133.183.26`: Fedora IoT 43, kernel `6.17.1-300.fc43.x86_64`, CPU virtualization flag `svm`, and `/dev/kvm` present.
-- [x] (2026-03-20 17:15Z) Confirmed current installed packages relevant to this plan: `podman` is present; `cockpit`, `cockpit-machines`, `libvirt-daemon-kvm`, `virt-install`, `qemu-kvm`, `firecracker`, `containerd`, and Kubernetes tooling are not yet installed.
 - [x] (2026-03-20 17:20Z) Confirmed Fedora 43 package availability for the first-class host stack: `cockpit`, `cockpit-machines`, `cockpit-podman`, `cockpit-networkmanager`, `cockpit-storaged`, `libvirt-daemon-kvm`, `libvirt-client`, `libvirt-daemon-config-network`, `virt-install`, `qemu-kvm`, `firecracker`, `containerd`, `cri-o`, `helm`, and `kind` are available in Fedora repos; `firecracker-containerd`, `kubernetes-client`, and `minikube` are not available from the default Fedora 43 repos checked on the host.
-- [ ] Install and validate the base virtualization management stack: Cockpit, libvirt, QEMU/KVM, and their required services and networking.
-- [ ] Install and validate the container stack: Podman tooling already exists, but Cockpit integration and supporting tools should be installed and verified.
-- [ ] Decide whether Firecracker experiments should use plain `firecracker` first or add `firecracker-containerd` from upstream releases outside Fedora packaging.
-- [ ] Decide whether lightweight Kubernetes should start with `kind` on Podman, `cri-o` plus kube components, or an upstream-installed `k3s` path.
-- [ ] Add repeatable validation notes for nested virtualization, VM lifecycle control, containers, Firecracker, and Kubernetes.
+- [x] (2026-03-20 18:15Z) Layered the base virtualization and management stack on the host with `rpm-ostree`, including Cockpit, libvirt, QEMU/KVM, Firecracker, CRI-O, `kind`, and `helm`, then rebooted into the new deployment successfully.
+- [x] (2026-03-20 18:25Z) Enabled and validated the management services: `cockpit.socket`, `containerd`, `crio`, and `libvirtd` are active; Cockpit is listening on port `9090`.
+- [x] (2026-03-20 18:35Z) Validated nested KVM hosting well enough for lab use: `/dev/kvm` is present, `virt-host-validate` passes the core KVM checks, `virsh -c qemu:///system` works under `sudo`, the default libvirt network is active, and a throwaway guest (`smokekata`) can be defined and started with `virt-install`.
+- [x] (2026-03-20 18:45Z) Validated the plain container path: `podman run --rm quay.io/podman/hello` succeeds on the host.
+- [x] (2026-03-20 19:05Z) Proved the Kata path using Fedora-packaged components. `kata-runtime check` succeeds after generating the packaged guest artifacts, and a real Kata-backed `busybox` workload ran successfully through `containerd-shim-kata-v2`.
+- [x] (2026-03-20 19:35Z) Proved the plain Firecracker path on the host. Fedora-packaged `firecracker` booted a guest to a serial login prompt using upstream guest assets and `/dev/kvm`.
+- [x] (2026-03-20 19:50Z) Proved a lightweight Kubernetes path on the host. `kind` successfully created a single-node cluster on rootless Podman, and the cluster was validated from inside the control-plane node with `kubectl`.
+- [ ] Decide whether `firecracker-containerd` is worth pursuing via upstream binaries or our own packaging.
+- [ ] Decide whether the working `kind`-on-Podman path is sufficient, or whether a second, more persistent Kubernetes distribution should also be evaluated later.
 
 ## Surprises & Discoveries
 
-- Observation: The host already exposes hardware virtualization to the guest.
+- Observation: The host already exposed hardware virtualization to the Fedora guest.
   Evidence: `/proc/cpuinfo` shows `svm`, and `/dev/kvm` exists on `10.133.183.26`.
 
-- Observation: Podman is already installed, so the host already has a usable container runtime for plain OCI containers.
-  Evidence: `rpm -q podman` returned `podman-5.6.2-1.fc43.x86_64`.
+- Observation: Fedora 43 packages nearly the entire base compute-host stack directly.
+  Evidence: `dnf repoquery --available` on the host returned package candidates for `cockpit`, `cockpit-machines`, `libvirt-daemon-kvm`, `virt-install`, `qemu-kvm`, `firecracker`, `containerd`, `cri-o`, `helm`, `kind`, and `kata-containers`.
 
-- Observation: Fedora 43 packages most of the base virtualization stack directly, which lowers the cost of the first milestone.
-  Evidence: `dnf repoquery --available` on the host returned package candidates for `cockpit`, `cockpit-machines`, `libvirt-daemon-kvm`, `virt-install`, `qemu-kvm`, `firecracker`, `containerd`, `cri-o`, `helm`, and `kind`.
+- Observation: `firecracker-containerd` is the clear packaging outlier.
+  Evidence: `dnf repoquery --available firecracker-containerd` returned no results, and upstream documents that its control plugin is compiled into a specialized `containerd` binary.
 
-- Observation: `firecracker-containerd` is not present in the Fedora 43 repos checked on the host.
-  Evidence: `dnf repoquery --available firecracker-containerd` returned no results.
+- Observation: Fedora's packaged Kata path is usable, but it is not turn-key immediately after package install.
+  Evidence: `kata-runtime check` initially failed until the host generated `/var/cache/kata-containers/vmlinuz.container` and `/var/cache/kata-containers/kata-containers-initrd.img` through the packaged osbuilder flow.
 
-- Observation: There is no installed remote-management stack yet.
-  Evidence: `rpm -q cockpit cockpit-machines libvirt-daemon-kvm libvirt-client virt-install qemu-kvm` all reported not installed, and `systemctl is-enabled cockpit.socket` returned `not-found`.
+- Observation: Fedora's packaged Kata default configuration is QEMU-backed rather than Firecracker-backed.
+  Evidence: `/usr/share/kata-containers/defaults/configuration.toml` contains a `[hypervisor.qemu]` section and does not expose a Firecracker stanza in the default config we checked.
+
+- Observation: A working Firecracker smoke test needed a real upstream `vmlinux`, not the packaged Kata `vmlinuz.container`.
+  Evidence: Firecracker rejected the Kata kernel path with `Invalid Elf magic number`, but booted successfully with upstream `vmlinux-6.1.155` and a converted Ubuntu root filesystem.
+
+- Observation: `kind` works on this Fedora IoT host with rootless Podman.
+  Evidence: `KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name smoke --wait 180s` succeeded, and `podman exec smoke-control-plane kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o wide` showed a ready control plane.
 
 ## Decision Log
 
 - Decision: Treat nested KVM and Cockpit/libvirt as the first milestone.
-  Rationale: The host already has `/dev/kvm`, and remote VM lifecycle control is the clearest next capability to unlock.
+  Rationale: The host already had `/dev/kvm`, and remote VM lifecycle control is the clearest general-purpose capability to unlock first.
   Date/Author: 2026-03-20 / Codex
 
 - Decision: Treat Podman as part of the baseline host capability rather than a separate experimental path.
-  Rationale: Podman is already installed and is the default Fedora-friendly container runtime for plain containers and for a likely `kind` path.
+  Rationale: Podman was already installed and is also the working base for the proven `kind` cluster path.
   Date/Author: 2026-03-20 / Codex
 
-- Decision: Leave `firecracker-containerd` as a later milestone pending an explicit packaging decision.
-  Rationale: `firecracker` itself is available from Fedora repos, but `firecracker-containerd` is not, so the initial plan should not assume a repo-native install path.
+- Decision: Use Fedora-packaged Kata rather than assuming immediate custom packaging work.
+  Rationale: The Fedora package includes `containerd-shim-kata-v2`, works after generating the guest artifacts, and is already sufficient for a real Kata-backed workload.
   Date/Author: 2026-03-20 / Codex
 
-- Decision: Treat lightweight Kubernetes as a choice point rather than locking in `k3s` immediately.
-  Rationale: `kind` is available from Fedora repos and aligns naturally with the existing Podman footprint, while `k3s` would require an upstream install path that has not yet been validated on this host.
+- Decision: Keep Firecracker as a standalone microVM milestone before entertaining `firecracker-containerd`.
+  Rationale: Plain Firecracker is repo-native enough for the host and is now proven, while `firecracker-containerd` still implies specialized packaging or upstream binaries.
+  Date/Author: 2026-03-20 / Codex
+
+- Decision: Treat `kind` on Podman as the current lightweight Kubernetes baseline.
+  Rationale: It is repo-native on Fedora 43, succeeded on the live host, and does not require introducing another upstream-installed distribution just to prove the capability.
   Date/Author: 2026-03-20 / Codex
 
 ## Outcomes & Retrospective
 
-Current outcome: this plan is now grounded in the real Fedora IoT 43 host instead of generic assumptions. The host already exposes `/dev/kvm` and has Podman installed, but it does not yet have Cockpit, libvirt, or the virtualization management tools installed. Fedora 43 packaging is sufficient for the first two milestones: remote VM control through Cockpit/libvirt and plain container hosting through Podman plus Cockpit integration. Firecracker and lightweight Kubernetes are still open design choices, mainly because `firecracker-containerd` and some Kubernetes distributions are not directly available from the default repos.
+Current outcome: the Fedora IoT host at `10.133.183.26` is now a proven compute playground across several surfaces, not just a package wishlist.
 
-## Context and Orientation
+Validated capabilities on the live host:
 
-The target machine is the Fedora IoT VM reachable at `friel@10.133.183.26`. The host currently runs Fedora 43 with kernel `6.17.1-300.fc43.x86_64`. Nested virtualization appears available because the guest sees the AMD virtualization flag `svm` and exposes `/dev/kvm`. This plan assumes the root hypervisor is Hyper-V and the Fedora guest has already been configured to receive virtualization extensions.
+- nested KVM/libvirt guest hosting works well enough for lab use
+- Cockpit is installed and listening on port `9090`
+- plain Podman containers work
+- Kata Containers work with the Fedora-packaged runtime stack
+- Firecracker works with the Fedora-packaged VMM plus upstream guest assets
+- lightweight Kubernetes works through `kind` on rootless Podman
 
-The repository does not yet contain host automation for these services. This plan is therefore documentation-first: capture exact package names, service names, and validation commands before any future automation is added. The services in scope are the libvirt stack for virtual machines, Cockpit for browser-based remote management, Podman for ordinary containers, Firecracker for microVM experiments, and one lightweight Kubernetes path that should be practical on Fedora IoT.
-
-## Plan of Work
-
-First, install the base virtualization stack on the host. That means layering `cockpit`, `cockpit-machines`, `cockpit-networkmanager`, `cockpit-storaged`, `cockpit-podman`, `libvirt-daemon-kvm`, `libvirt-client`, `libvirt-daemon-config-network`, `qemu-kvm`, and `virt-install` with `rpm-ostree`. Then enable `cockpit.socket` and the appropriate libvirt service or socket activation path. The first acceptance proof is that Cockpit is reachable on TCP 9090 and the `Machines` page can see libvirt.
-
-Second, validate nested KVM from inside the Fedora guest. That means confirming `/dev/kvm` still exists after the virtualization stack is installed, `virt-host-validate` reports the important checks as passing, and a small test guest can be created with `virt-install`. The exact image choice can remain lightweight, but the validation must prove that the Fedora guest can itself host virtual machines.
-
-Third, formalize the container management stack. Podman already exists, but the host should also have `cockpit-podman`, `podman-remote`, and `skopeo` installed so both local CLI and Cockpit workflows are covered. Acceptance for this milestone is that `podman run` works and the running container is visible in Cockpit.
-
-Fourth, stage Firecracker deliberately. Start with the Fedora-packaged `firecracker` binary and verify that KVM is usable for a microVM process on this host. Do not assume `firecracker-containerd` until there is a documented binary-install or package-install story. If later work chooses to add it, that should become a separate milestone with explicit provenance and rollback notes.
-
-Fifth, choose one lightweight Kubernetes path and document it tightly. The lowest-friction current candidate is `kind`, because it is packaged in Fedora 43 and can ride on the container runtime already present. If a later run decides `k3s` or another distribution is a better fit, that should replace this milestone with concrete install and validation steps instead of vague aspiration.
+The most important remaining unresolved item is not host capability. It is packaging scope: `firecracker-containerd` is still the only path that looks likely to require upstream binaries or our own RPM work.
 
 ## Concrete Steps
 
@@ -84,9 +90,7 @@ Capture the host baseline before changes:
 
 Install the base virtualization and management stack on the host:
 
-    ssh friel@10.133.183.26 'sudo rpm-ostree install --allow-inactive cockpit cockpit-machines cockpit-networkmanager cockpit-storaged cockpit-podman libvirt-daemon-kvm libvirt-client libvirt-daemon-config-network qemu-kvm virt-install podman-remote skopeo firecracker containerd kind helm'
-    ssh friel@10.133.183.26 'sudo systemctl enable --now cockpit.socket'
-    ssh friel@10.133.183.26 'sudo systemctl enable --now libvirtd || sudo systemctl enable --now virtqemud.socket virtnetworkd.socket virtstoraged.socket'
+    ssh friel@10.133.183.26 'sudo rpm-ostree install --allow-inactive cockpit cockpit-machines cockpit-networkmanager cockpit-storaged cockpit-podman libvirt-daemon-kvm libvirt-client libvirt-daemon-config-network qemu-kvm virt-install firecracker containerd cri-o cri-tools kind helm kata-containers qemu-kvm-core virtiofsd runc dbus-daemon'
 
 After any `rpm-ostree` layering change, reboot and reconnect:
 
@@ -94,75 +98,69 @@ After any `rpm-ostree` layering change, reboot and reconnect:
 
 Validate KVM and libvirt on the host:
 
-    ssh friel@10.133.183.26 'ls -l /dev/kvm; virt-host-validate; virsh -c qemu:///system list --all'
+    ssh friel@10.133.183.26 'ls -l /dev/kvm; sudo virt-host-validate; sudo virsh -c qemu:///system list --all'
 
-Create a lightweight test guest once a bootable image is available on the host:
+Validate Cockpit and base services:
 
-    ssh friel@10.133.183.26 'sudo virt-install --name smokevm --memory 2048 --vcpus 2 --disk size=12 --os-variant fedora-unknown --network network=default --graphics none --import --noautoconsole'
+    ssh friel@10.133.183.26 'sudo systemctl enable --now cockpit.socket containerd crio libvirtd; sudo ss -ltnp | grep :9090'
 
-Validate Podman and Cockpit container management:
+Validate Podman:
 
     ssh friel@10.133.183.26 'podman run --rm quay.io/podman/hello'
-    ssh friel@10.133.183.26 'systemctl status cockpit.socket --no-pager'
 
-Validate Firecracker availability:
+Validate Kata:
 
-    ssh friel@10.133.183.26 'command -v firecracker; firecracker --version'
+    ssh friel@10.133.183.26 'sudo /usr/libexec/kata-containers/osbuilder/kata-osbuilder.sh -c'
+    ssh friel@10.133.183.26 'sudo kata-runtime check'
+    ssh friel@10.133.183.26 'sudo ctr run --rm --runtime io.containerd.kata.v2 docker.io/library/busybox:latest kata-smoke /bin/sh -c "echo kata-ok && uname -a"'
 
-Validate the lightweight Kubernetes path if `kind` is chosen:
+Validate Firecracker:
 
-    ssh friel@10.133.183.26 'kind --version'
+    ssh friel@10.133.183.26 'firecracker --version'
+
+    # guest assets needed; packaged Kata kernel is not sufficient because Firecracker requires an ELF vmlinux
+
+Validate lightweight Kubernetes with `kind` on Podman:
+
+    ssh friel@10.133.183.26 'export KIND_EXPERIMENTAL_PROVIDER=podman; kind create cluster --name smoke --wait 180s'
+    ssh friel@10.133.183.26 'podman exec smoke-control-plane kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o wide'
 
 ## Validation and Acceptance
 
 This plan is complete when all of the following are true on `10.133.183.26`:
 
 1. `/dev/kvm` is present and `virt-host-validate` shows KVM/libvirt checks passing well enough to host guests.
-2. Cockpit is installed, `cockpit.socket` is enabled, and the web UI on port 9090 exposes the machine-management capabilities expected for the installed Cockpit modules.
-3. Libvirt can enumerate a system connection with `virsh -c qemu:///system list --all`.
+2. Cockpit is installed, `cockpit.socket` is enabled, and the web UI is reachable on port `9090`.
+3. Libvirt can enumerate a system connection with `sudo virsh -c qemu:///system list --all`.
 4. A small nested guest can be defined or booted on the host using `virt-install`.
-5. `podman run` works, and Cockpit can see container state if `cockpit-podman` is installed.
-6. `firecracker --version` works and a documented path exists for microVM experiments on the host.
-7. A documented lightweight Kubernetes path exists and is validated at least to the point of creating a local development cluster or proving why that chosen path is blocked.
+5. `podman run` works.
+6. A Kata-backed container can run successfully.
+7. A Firecracker guest can boot successfully on the host.
+8. A lightweight Kubernetes path exists and is validated at least to the point of creating a local development cluster on the host.
 
 ## Idempotence and Recovery
 
-The baseline inspection commands are safe to rerun. `rpm-ostree install --allow-inactive` is safe for iterative host layering, but each successful layering transaction requires a reboot before runtime validation. If `libvirtd` is not the active service name on Fedora IoT, fall back to enabling the split libvirt sockets (`virtqemud.socket`, `virtnetworkd.socket`, and `virtstoraged.socket`) rather than forcing a non-existent unit. If a milestone turns out to be too heavy for the host, leave the packages installed but disable the service and record the reason in this plan instead of deleting evidence.
+The baseline inspection commands are safe to rerun. `rpm-ostree install --allow-inactive` is safe for iterative host layering, but each successful layering transaction requires a reboot before runtime validation. If `libvirtd` is not the active service name on Fedora IoT, fall back to enabling the split libvirt sockets (`virtqemud.socket`, `virtnetworkd.socket`, and `virtstoraged.socket`) rather than forcing a non-existent unit. If `kind` already has a cluster named `smoke`, delete it with `kind delete cluster --name smoke` before recreating it. Firecracker smoke tests are easiest to keep disposable by storing guest assets and logs under `/var/tmp`.
 
 ## Artifacts and Notes
 
-Current baseline proof captured on the host before this plan starts:
+Representative validated runtime facts from the host:
 
-    $ egrep -o 'vmx|svm' /proc/cpuinfo | head -n1
-    svm
+    $ sudo kata-runtime check
+    System is capable of running Kata Containers
+    System can currently create Kata Containers
 
-    $ ls -l /dev/kvm
-    crw-rw-rw-. 1 root kvm 10, 232 ... /dev/kvm
+    $ sudo ctr run --rm --runtime io.containerd.kata.v2 docker.io/library/busybox:latest kata-smoke /bin/sh -c 'echo kata-ok && uname -a'
+    kata-ok
+    Linux localhost 6.17.1-300.fc43.x86_64 ...
 
-    $ rpm -q podman
-    podman-5.6.2-1.fc43.x86_64
+    $ firecracker --version
+    Firecracker v1.13.1
 
-    $ rpm -q cockpit cockpit-machines libvirt-daemon-kvm qemu-kvm virt-install firecracker containerd kind || true
-    package cockpit is not installed
-    ...
+    $ podman exec smoke-control-plane kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o wide
+    smoke-control-plane   Ready   control-plane   ...   v1.35.0   ...   containerd://2.2.0
 
-Repo-query proof that Fedora 43 can supply the base stack directly:
-
-    cockpit
-    cockpit-machines
-    cockpit-podman
-    libvirt-daemon-kvm
-    libvirt-client
-    libvirt-daemon-config-network
-    qemu-kvm
-    virt-install
-    firecracker
-    containerd
-    cri-o
-    helm
-    kind
-
-Repo-query gaps that require a later decision if they become mandatory:
+Repo-query gaps that still require a later decision if they become mandatory:
 
     firecracker-containerd
     kubernetes-client
@@ -170,6 +168,6 @@ Repo-query gaps that require a later decision if they become mandatory:
 
 ## Interfaces and Dependencies
 
-This work depends on SSH access to `10.133.183.26`, working `rpm-ostree` layering on the host, and the Hyper-V outer VM being configured to expose virtualization extensions to the Fedora guest. The first-class host interfaces to validate are `cockpit.socket` for remote management, libvirt’s `qemu:///system` connection for nested virtual machines, the `podman` CLI and Cockpit Podman integration for containers, the `firecracker` binary for microVM experiments, and the chosen lightweight Kubernetes interface (`kind` unless later evidence changes the choice).
+This work depends on SSH access to `10.133.183.26`, working `rpm-ostree` layering on the host, and the Hyper-V outer VM being configured to expose virtualization extensions to the Fedora guest. The first-class host interfaces now validated are `cockpit.socket` for remote management, libvirt's `qemu:///system` connection for nested virtual machines, the `podman` CLI for plain containers and the working `kind` cluster, the Fedora-packaged Kata runtime stack through `containerd-shim-kata-v2`, and the `firecracker` binary for microVM experiments. The main open dependency is whether future `firecracker-containerd` work should accept upstream binaries or invest in packaging.
 
-Change note: Created this plan from the current host baseline so future work can add nested VMs, Cockpit management, Podman workflows, Firecracker experiments, and a lightweight Kubernetes path without guessing package names or prerequisites.
+Change note: This plan started from a baseline package survey and now records proven host capabilities rather than hypothetical package installs.
