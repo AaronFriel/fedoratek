@@ -6,7 +6,7 @@ This repository does not contain a `PLANS.md` file. Maintain this document in ac
 
 ## Purpose / Big Picture
 
-The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host that can run several kinds of compute services: nested KVM virtual machines, remotely controlled libvirt guests through Cockpit, ordinary OCI containers through Podman, Firecracker microVM experiments, Kata-based VM-isolated containers, and a lightweight Kubernetes environment for local cluster experiments. After this work, a novice should be able to log into the host, see `/dev/kvm`, use Cockpit to create or inspect virtual machines, run Podman containers, run a Kata-backed container, boot a Firecracker guest, and follow a documented path for a lightweight Kubernetes cluster without guessing package names or host prerequisites.
+The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host that can run several kinds of compute services: nested KVM virtual machines, remotely controlled libvirt guests through Cockpit, ordinary OCI containers through Podman, Firecracker microVM experiments, Kata-based VM-isolated containers, and a lightweight Kubernetes environment for local cluster experiments. After this work, a novice should be able to log into the host, see `/dev/kvm`, use Cockpit to create or inspect virtual machines, run Podman containers, run a Kata-backed container, boot a Firecracker guest, and interact with a persistent K3s control plane without guessing package names or host prerequisites.
 
 ## Progress
 
@@ -18,9 +18,10 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
 - [x] (2026-03-20 18:45Z) Validated the plain container path: `podman run --rm quay.io/podman/hello` succeeds on the host.
 - [x] (2026-03-20 19:05Z) Proved the Kata path using Fedora-packaged components. `kata-runtime check` succeeds after generating the packaged guest artifacts, and a real Kata-backed `busybox` workload ran successfully through `containerd-shim-kata-v2`.
 - [x] (2026-03-20 19:35Z) Proved the plain Firecracker path on the host. Fedora-packaged `firecracker` booted a guest to a serial login prompt using upstream guest assets and `/dev/kvm`.
-- [x] (2026-03-20 19:50Z) Proved a lightweight Kubernetes path on the host. `kind` successfully created a single-node cluster on rootless Podman, and the cluster was validated from inside the control-plane node with `kubectl`.
+- [x] (2026-03-20 19:50Z) Proved an initial lightweight Kubernetes path with `kind` on rootless Podman, then removed that temporary cluster after a more native K3s path was validated.
+- [x] (2026-03-20 23:55Z) Installed and validated K3s as the preferred lightweight Kubernetes path. The host now runs a single-node `k3s` server that survives reboot, returns `Ready`, and schedules a test deployment in namespace `smoke`.
 - [ ] Decide whether `firecracker-containerd` is worth pursuing via upstream binaries or our own packaging.
-- [ ] Decide whether the working `kind`-on-Podman path is sufficient, or whether a second, more persistent Kubernetes distribution should also be evaluated later.
+- [ ] Decide whether to wire Kata into K3s through a custom containerd runtime and `RuntimeClass`, or keep Kata as a separate proven host capability for now.
 
 ## Surprises & Discoveries
 
@@ -42,8 +43,11 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
 - Observation: A working Firecracker smoke test needed a real upstream `vmlinux`, not the packaged Kata `vmlinuz.container`.
   Evidence: Firecracker rejected the Kata kernel path with `Invalid Elf magic number`, but booted successfully with upstream `vmlinux-6.1.155` and a converted Ubuntu root filesystem.
 
-- Observation: `kind` works on this Fedora IoT host with rootless Podman.
-  Evidence: `KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name smoke --wait 180s` succeeded, and `podman exec smoke-control-plane kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o wide` showed a ready control plane.
+- Observation: The K3s install path on Fedora IoT was blocked twice by host-specific policy behavior rather than by K3s itself.
+  Evidence: the installer's automatic `k3s-selinux` path failed with `failed to add subkeys ... public.key to rpmdb`, then `k3s.service` failed because `/usr/local/bin/k3s` was mislabeled `user_tmp_t` until `restorecon` changed it back to `bin_t`.
+
+- Observation: The first post-reboot K3s addon failures were caused by time synchronization, not by a broken K3s install.
+  Evidence: `chronyd` logged `System clock was stepped by -25198.995738 seconds`, while the initial addon pods failed with `service account token is not valid yet`; restarting `k3s` after the clock stabilized brought all addons up cleanly.
 
 ## Decision Log
 
@@ -52,7 +56,7 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
   Date/Author: 2026-03-20 / Codex
 
 - Decision: Treat Podman as part of the baseline host capability rather than a separate experimental path.
-  Rationale: Podman was already installed and is also the working base for the proven `kind` cluster path.
+  Rationale: Podman was already installed and is also the working base for the earlier `kind` smoke test.
   Date/Author: 2026-03-20 / Codex
 
 - Decision: Use Fedora-packaged Kata rather than assuming immediate custom packaging work.
@@ -63,8 +67,12 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
   Rationale: Plain Firecracker is repo-native enough for the host and is now proven, while `firecracker-containerd` still implies specialized packaging or upstream binaries.
   Date/Author: 2026-03-20 / Codex
 
-- Decision: Treat `kind` on Podman as the current lightweight Kubernetes baseline.
-  Rationale: It is repo-native on Fedora 43, succeeded on the live host, and does not require introducing another upstream-installed distribution just to prove the capability.
+- Decision: Replace the temporary `kind` smoke cluster with K3s as the preferred Kubernetes path on this host.
+  Rationale: `kind` proved the host could run Kubernetes, but K3s is a better long-lived single-node control plane for a homelab Fedora IoT box and remains lighter-weight than a full `kubeadm` setup.
+  Date/Author: 2026-03-20 / Codex
+
+- Decision: Keep SELinux enforcing on the host while skipping the failed automatic `k3s-selinux` RPM installation.
+  Rationale: The host-specific Rancher SELinux RPM path failed under `rpm-ostree`, but K3s itself runs after correcting the binary file context and documenting the limitation.
   Date/Author: 2026-03-20 / Codex
 
 ## Outcomes & Retrospective
@@ -78,9 +86,9 @@ Validated capabilities on the live host:
 - plain Podman containers work
 - Kata Containers work with the Fedora-packaged runtime stack
 - Firecracker works with the Fedora-packaged VMM plus upstream guest assets
-- lightweight Kubernetes works through `kind` on rootless Podman
+- K3s now serves as the host's active lightweight Kubernetes control plane and can run a test workload
 
-The most important remaining unresolved item is not host capability. It is packaging scope: `firecracker-containerd` is still the only path that looks likely to require upstream binaries or our own RPM work.
+The most important remaining unresolved item is not host capability. It is integration scope: `firecracker-containerd` still looks likely to require upstream binaries or our own RPM work, and K3s plus Kata has not yet been wired together with a custom runtime configuration.
 
 ## Concrete Steps
 
@@ -120,10 +128,26 @@ Validate Firecracker:
 
     # guest assets needed; packaged Kata kernel is not sufficient because Firecracker requires an ELF vmlinux
 
-Validate lightweight Kubernetes with `kind` on Podman:
+Install and validate K3s:
 
-    ssh friel@10.133.183.26 'export KIND_EXPERIMENTAL_PROVIDER=podman; kind create cluster --name smoke --wait 180s'
-    ssh friel@10.133.183.26 'podman exec smoke-control-plane kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o wide'
+    ssh friel@10.133.183.26 'sudo firewall-cmd --permanent --add-port=6443/tcp; sudo firewall-cmd --permanent --zone=trusted --add-source=10.42.0.0/16; sudo firewall-cmd --permanent --zone=trusted --add-source=10.43.0.0/16; sudo firewall-cmd --reload'
+
+    ssh friel@10.133.183.26 'sudo mkdir -p /etc/rancher/k3s && cat <<"EOF" | sudo tee /etc/rancher/k3s/config.yaml >/dev/null
+    write-kubeconfig-mode: "0644"
+    tls-san:
+      - 10.133.183.26
+    EOF'
+
+    ssh friel@10.133.183.26 'curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" INSTALL_K3S_SKIP_SELINUX_RPM=true INSTALL_K3S_SELINUX_WARN=true sh -'
+
+    ssh friel@10.133.183.26 'sudo restorecon -v /usr/local/bin/k3s /usr/local/bin/kubectl /usr/local/bin/k3s-killall.sh /usr/local/bin/k3s-uninstall.sh'
+
+    ssh friel@10.133.183.26 'sudo systemctl enable --now k3s'
+
+    # if addon pods fail immediately after a reboot and `chronyd` logged a large clock step, restart K3s once the clock is synchronized
+
+    ssh friel@10.133.183.26 'KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes -o wide'
+    ssh friel@10.133.183.26 'sudo k3s kubectl -n smoke get pods -o wide'
 
 ## Validation and Acceptance
 
@@ -136,11 +160,11 @@ This plan is complete when all of the following are true on `10.133.183.26`:
 5. `podman run` works.
 6. A Kata-backed container can run successfully.
 7. A Firecracker guest can boot successfully on the host.
-8. A lightweight Kubernetes path exists and is validated at least to the point of creating a local development cluster on the host.
+8. K3s comes up after reboot, reports a `Ready` control-plane node, and can run a user workload.
 
 ## Idempotence and Recovery
 
-The baseline inspection commands are safe to rerun. `rpm-ostree install --allow-inactive` is safe for iterative host layering, but each successful layering transaction requires a reboot before runtime validation. If `libvirtd` is not the active service name on Fedora IoT, fall back to enabling the split libvirt sockets (`virtqemud.socket`, `virtnetworkd.socket`, and `virtstoraged.socket`) rather than forcing a non-existent unit. If `kind` already has a cluster named `smoke`, delete it with `kind delete cluster --name smoke` before recreating it. Firecracker smoke tests are easiest to keep disposable by storing guest assets and logs under `/var/tmp`.
+The baseline inspection commands are safe to rerun. `rpm-ostree install --allow-inactive` is safe for iterative host layering, but each successful layering transaction requires a reboot before runtime validation. If `libvirtd` is not the active service name on Fedora IoT, fall back to enabling the split libvirt sockets (`virtqemud.socket`, `virtnetworkd.socket`, and `virtstoraged.socket`) rather than forcing a non-existent unit. Firecracker smoke tests are easiest to keep disposable by storing guest assets and logs under `/var/tmp`. K3s installation is idempotent enough to rerun through the installer, but on this host the SELinux file context correction with `restorecon` is also required. If the first boot after enabling K3s experiences a large `chronyd` clock step, restart `k3s` once time is stable before diagnosing addon failures further.
 
 ## Artifacts and Notes
 
@@ -157,8 +181,11 @@ Representative validated runtime facts from the host:
     $ firecracker --version
     Firecracker v1.13.1
 
-    $ podman exec smoke-control-plane kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o wide
-    smoke-control-plane   Ready   control-plane   ...   v1.35.0   ...   containerd://2.2.0
+    $ KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes -o wide
+    localhost.localdomain   Ready   control-plane   ...   v1.34.5+k3s1   ...   containerd://2.1.5-k3s1
+
+    $ sudo k3s kubectl -n smoke get pods -o wide
+    echo-...   1/1   Running   0   ...   10.42.0.9   localhost.localdomain
 
 Repo-query gaps that still require a later decision if they become mandatory:
 
@@ -168,6 +195,6 @@ Repo-query gaps that still require a later decision if they become mandatory:
 
 ## Interfaces and Dependencies
 
-This work depends on SSH access to `10.133.183.26`, working `rpm-ostree` layering on the host, and the Hyper-V outer VM being configured to expose virtualization extensions to the Fedora guest. The first-class host interfaces now validated are `cockpit.socket` for remote management, libvirt's `qemu:///system` connection for nested virtual machines, the `podman` CLI for plain containers and the working `kind` cluster, the Fedora-packaged Kata runtime stack through `containerd-shim-kata-v2`, and the `firecracker` binary for microVM experiments. The main open dependency is whether future `firecracker-containerd` work should accept upstream binaries or invest in packaging.
+This work depends on SSH access to `10.133.183.26`, working `rpm-ostree` layering on the host, and the Hyper-V outer VM being configured to expose virtualization extensions to the Fedora guest. The first-class host interfaces now validated are `cockpit.socket` for remote management, libvirt's `qemu:///system` connection for nested virtual machines, the `podman` CLI for plain containers, the Fedora-packaged Kata runtime stack through `containerd-shim-kata-v2`, the `firecracker` binary for microVM experiments, and the K3s API plus kubeconfig at `/etc/rancher/k3s/k3s.yaml` for the native lightweight Kubernetes path. The main open dependency is whether future `firecracker-containerd` work should accept upstream binaries or invest in packaging, and whether Kata should later become a K3s runtime instead of remaining a separate proven host capability.
 
-Change note: This plan started from a baseline package survey and now records proven host capabilities rather than hypothetical package installs.
+Change note: This plan started from a baseline package survey, graduated through package and runtime proofs, and now records K3s as the preferred Kubernetes baseline after removing the temporary `kind` smoke cluster.

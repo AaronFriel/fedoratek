@@ -1,4 +1,4 @@
-# Fedora 43 / Fedora IoT research: Firecracker, containerd, Kata Containers, and lightweight Kubernetes
+# Fedora 43 / Fedora IoT research: Firecracker, containerd, Kata Containers, and native lightweight Kubernetes
 
 This note captures what was actually proved on the Fedora IoT host at `10.133.183.26`, plus the remaining packaging and support questions for the less repo-native paths.
 
@@ -10,7 +10,7 @@ For Fedora 43 and Fedora IoT, the paths are not equal.
 
 - `kata-containers` is repo-native and proven on the host. We did not need a custom kernel module or a custom RPM to run a Kata-backed workload.
 - `firecracker` itself is repo-native enough for lab work and is now proven on the host with a real guest boot.
-- `kind` on Podman is repo-native enough for a lightweight Kubernetes lab path and is now proven on the host.
+- `k3s` is the current preferred lightweight Kubernetes path for this host. It is not Fedora-repo-native, but it is now proven on the host and is a better long-lived fit than the earlier `kind` smoke cluster.
 - `firecracker-containerd` is the outlier. It is not present in the Fedora 43 repos checked on the host, and upstream documents that it needs a specialized `containerd` build. That is the one path where we should currently assume upstream binaries or our own packaging work.
 
 ## What the current host already has
@@ -39,7 +39,6 @@ Available directly in Fedora 43:
 - `crun`
 - `containernetworking-plugins`
 - `kata-containers`
-- `kind`
 - `helm`
 
 Not found in the default Fedora 43 repos checked on the host:
@@ -54,6 +53,70 @@ Not found in the default Fedora 43 repos checked on the host:
 ## Proven host results
 
 The following paths are no longer just researched. They were exercised on the live Fedora IoT host.
+
+### K3s on Fedora 43 / IoT
+
+This is now the preferred lightweight Kubernetes path on the host.
+
+The final working model was:
+
+- keep SELinux enforcing on the host
+- keep `firewalld` enabled
+- open the K3s API port and trust the default pod and service CIDRs:
+  - `6443/tcp`
+  - `10.42.0.0/16`
+  - `10.43.0.0/16`
+- install upstream K3s as a single-node server
+
+The successful K3s config on the host is:
+
+    write-kubeconfig-mode: "0644"
+    tls-san:
+      - 10.133.183.26
+
+The host uses:
+
+- K3s version: `v1.34.5+k3s1`
+- container runtime inside K3s: `containerd://2.1.5-k3s1`
+
+Important Fedora IoT discoveries from the live install:
+
+- the installer's attempt to add `k3s-selinux` through `rpm-ostree` failed on this host with:
+
+    failed to add subkeys for /var/cache/rpm-ostree/repomd/rancher-k3s-common-stable-43-x86_64/public.key to rpmdb
+
+- the K3s binary installed under `/usr/local/bin/k3s`, but it was mislabeled as `user_tmp_t`
+- systemd then failed to start `k3s.service` with an SELinux execute denial until the file was relabeled with `restorecon`
+- after the host reboot, `chronyd` stepped the clock backward by about 25,199 seconds during early boot, which caused the first round of K3s addon pods to fail with service-account tokens that were “not valid yet”
+- restarting `k3s` after time synchronization completed fixed those addon failures cleanly
+
+What was proved:
+
+- `k3s.service` is active on the host and survives reboot
+- the node returns `Ready` after reboot without reinstalling anything
+- `kubectl` works for the unprivileged `friel` user with `KUBECONFIG=/etc/rancher/k3s/k3s.yaml`
+- a test workload was scheduled successfully:
+
+    namespace `smoke`
+    deployment `echo`
+    image `docker.io/library/nginx:stable`
+
+Observed running state:
+
+- node:
+
+    localhost.localdomain   Ready   control-plane   ...   v1.34.5+k3s1   ...   containerd://2.1.5-k3s1
+
+- workload pod:
+
+    echo-...   1/1   Running   ...   10.42.0.9   localhost.localdomain
+
+Conclusion for K3s:
+
+- K3s is the right “more native” Kubernetes path on this Fedora IoT host
+- it required less host plumbing than `kubeadm`
+- it is a better persistent fit than `kind` here
+- it is still an upstream-installed component rather than a Fedora-repo-native package
 
 ### Kata Containers on Fedora 43 / IoT
 
@@ -143,41 +206,6 @@ Conclusion for plain Firecracker:
 - we do need guest assets that match Firecracker's expectations
 - this is a good lab milestone because it isolates Firecracker itself from the `containerd` integration problem
 
-### Lightweight Kubernetes on Fedora 43 / IoT
-
-The repo-native path that worked was `kind` on Podman.
-
-Packages already present or layered on the host for this path:
-
-- `podman`
-- `kind`
-- `containerd`
-- `cri-o`
-- `cri-tools`
-- `helm`
-
-What was proved:
-
-- `kind version` reported `0.31.0`
-- the host's rootless Podman setup was usable for `kind`
-- `KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name smoke --wait 180s` succeeded
-- `kind get clusters` returned `smoke`
-- the control-plane node stayed up as a Podman container
-- from inside the node, `kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o wide` showed a ready Kubernetes control plane
-- `kubectl get pods -n kube-system -o wide` from inside the node showed the expected control-plane and system pods running (`etcd`, `kube-apiserver`, `kube-controller-manager`, `kube-scheduler`, `kindnet`, `coredns`, `kube-proxy`)
-
-One minor host limitation remains:
-
-- `kubectl` is not installed on the Fedora IoT host itself from the default Fedora 43 repos we checked
-
-That did not block the proof because the cluster was validated from inside the control-plane node container.
-
-Conclusion for lightweight Kubernetes:
-
-- Fedora 43 / IoT can act as a lightweight Kubernetes lab host without adding upstream `k3s` or custom packaging
-- `kind` on Podman is the current lowest-friction path that is actually proven on this host
-- if we later want a more persistent or API-oriented cluster path, that should be evaluated separately rather than replacing this working baseline
-
 ## Firecracker with containerd on Fedora 43
 
 This remains the least repo-native path.
@@ -214,14 +242,14 @@ If the goal is to keep growing this Fedora IoT host into a compute playground wi
 
 1. keep Kata as the repo-native VM-isolated container path
 2. keep plain Firecracker as the repo-native microVM path
-3. keep `kind` on Podman as the current lightweight Kubernetes path
+3. keep K3s as the current lightweight Kubernetes path
 4. treat `firecracker-containerd` as a later packaging/integration project
 
 ## Commands used for the proved results
 
 Representative host checks used for the current conclusions:
 
-    ssh friel@10.133.183.26 'dnf -q repoquery --available firecracker containerd cri-o cri-tools runc crun containernetworking-plugins kata-containers firecracker-containerd nerdctl kind helm'
+    ssh friel@10.133.183.26 'dnf -q repoquery --available firecracker containerd cri-o cri-tools runc crun containernetworking-plugins kata-containers firecracker-containerd nerdctl helm'
 
     ssh friel@10.133.183.26 'sudo kata-runtime check'
 
@@ -229,9 +257,13 @@ Representative host checks used for the current conclusions:
 
     ssh friel@10.133.183.26 'firecracker --version'
 
-    ssh friel@10.133.183.26 'export KIND_EXPERIMENTAL_PROVIDER=podman; kind create cluster --name smoke --wait 180s'
+    ssh friel@10.133.183.26 'curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" INSTALL_K3S_SKIP_SELINUX_RPM=true INSTALL_K3S_SELINUX_WARN=true sh -'
 
-    ssh friel@10.133.183.26 'podman exec smoke-control-plane kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes -o wide'
+    ssh friel@10.133.183.26 'sudo restorecon -v /usr/local/bin/k3s /usr/local/bin/kubectl /usr/local/bin/k3s-killall.sh /usr/local/bin/k3s-uninstall.sh'
+
+    ssh friel@10.133.183.26 'KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes -o wide'
+
+    ssh friel@10.133.183.26 'sudo k3s kubectl -n smoke get pods -o wide'
 
 ## Sources
 
