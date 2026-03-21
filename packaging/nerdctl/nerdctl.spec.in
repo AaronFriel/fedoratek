@@ -1,0 +1,44 @@
+%global debug_package %{nil}
+Name:           nerdctl
+Version:        @VERSION@
+Release:        @RELEASE@%{?dist}
+Summary:        Docker-compatible CLI for containerd
+License:        ASL 2.0
+URL:            https://github.com/containerd/nerdctl
+Source0:        @SOURCE_TARBALL@
+Source1:        nerdctl.toml
+
+BuildRequires:  golang
+BuildRequires:  make
+
+%description
+nerdctl is a Docker-compatible CLI for containerd. This package builds the
+upstream nerdctl client and installs the main CLI along with the upstream
+rootless helper scripts so immutable Fedora hosts can layer a repo-tracked
+containerd client instead of relying on ad hoc binary drops.
+
+%prep
+%autosetup -n @SOURCE_DIR@
+
+%build
+make binaries VERSION=v%{version} REVISION=@COMMIT@
+
+%install
+install -D -m 0755 _output/nerdctl %{buildroot}%{_bindir}/nerdctl
+install -D -m 0755 extras/rootless/containerd-rootless.sh %{buildroot}%{_bindir}/containerd-rootless.sh
+install -D -m 0755 extras/rootless/containerd-rootless-setuptool.sh %{buildroot}%{_bindir}/containerd-rootless-setuptool.sh
+install -D -m 0644 %{SOURCE1} %{buildroot}%{_sysconfdir}/nerdctl/nerdctl.toml
+install -d -m 0755 %{buildroot}%{_datadir}/doc/nerdctl
+cp -a docs/*.md %{buildroot}%{_datadir}/doc/nerdctl/
+
+%files
+%license LICENSE
+%doc %{_datadir}/doc/nerdctl
+%config(noreplace) %{_sysconfdir}/nerdctl/nerdctl.toml
+%{_bindir}/nerdctl
+%{_bindir}/containerd-rootless.sh
+%{_bindir}/containerd-rootless-setuptool.sh
+
+%changelog
+* Sat Mar 21 2026 Codex <codex@example.invalid> - @VERSION@-@RELEASE@
+- Package nerdctl for immutable Fedora hosts.

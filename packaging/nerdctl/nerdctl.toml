@@ -1,0 +1,4 @@
+# Fedora places CNI plugins under /usr/libexec/cni rather than the upstream
+# default /opt/cni/bin. Ship the distro-native path so `nerdctl run` works on
+# immutable hosts without ad hoc symlinks or per-command overrides.
+cni_path = "/usr/libexec/cni"

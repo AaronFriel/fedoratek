@@ -366,3 +366,48 @@ Repo-query gaps that still require a later decision if they become mandatory:
 This work depends on SSH access to `10.133.183.26`, working `rpm-ostree` layering on the host, and the Hyper-V outer VM being configured to expose virtualization extensions to the Fedora guest. The first-class host interfaces now validated are `cockpit.socket` for remote management, libvirt's `qemu:///system` connection for nested virtual machines, the `podman` CLI for plain containers, the Fedora-packaged Kata runtime stack through `containerd-shim-kata-v2`, the `firecracker` binary for microVM experiments, the K3s API plus kubeconfig at `/etc/rancher/k3s/k3s.yaml` for the native lightweight Kubernetes path, and the dedicated `firecracker-containerd` service plus `/run/firecracker-containerd/containerd.sock` for Firecracker-backed containers. Kata is now also proven inside K3s through `RuntimeClass` and upstream `kata-deploy`, with K3s configured to import runtime drop-ins from `config-v3.toml.d` and to activate a K3s-local `devmapper` snapshotter for `kata-fc`. The `firecracker-containerd` dependency story is now concrete rather than hypothetical: Fedora 43 still lacks a repo-native package, so this repository carries its own packaging and constrains the default build target to Fedora 43 `x86_64` until more host proofs exist.
 
 Change note: This plan started from a baseline package survey, graduated through package and runtime proofs, moved from a temporary `kind` smoke cluster to K3s, then recorded the exact K3s+Kata RuntimeClass paths that worked on the host for both `kata-qemu` and `kata-fc`. It now also records the completed `firecracker-containerd` host proof: layered RPM delivery, static guest asset packaging, automatic `devmapper` setup on service start, and successful post-reboot Firecracker-backed container execution.
+
+## nerdctl follow-on proof
+
+This plan now also includes a proven immutable-host client path for stock
+`containerd` on `10.133.183.26`.
+
+What was layered:
+
+- repo-local RPM: `nerdctl-2.2.1-2.fc43.x86_64`
+
+What the package adds:
+
+- `/usr/bin/nerdctl`
+- `/usr/bin/containerd-rootless.sh`
+- `/usr/bin/containerd-rootless-setuptool.sh`
+- `/etc/nerdctl/nerdctl.toml`
+
+The Fedora-specific config shipped in the RPM is:
+
+    cni_path = "/usr/libexec/cni"
+
+That override is required because Fedora's CNI plugin path differs from the
+upstream nerdctl default. With the packaged config in place, the default stock
+containerd smoke test succeeds:
+
+    ssh friel@10.133.183.26 'sudo nerdctl --address /run/containerd/containerd.sock run --rm docker.io/library/busybox:latest /bin/sh -c "echo nerdctl-containerd-default-ok && uname -a"'
+
+Observed output:
+
+    nerdctl-containerd-default-ok
+    Linux ... 6.17.1-300.fc43.x86_64 ...
+
+The same client can talk to the dedicated Firecracker socket for image
+operations:
+
+    ssh friel@10.133.183.26 'sudo nerdctl --address /run/firecracker-containerd/containerd.sock images'
+    ssh friel@10.133.183.26 'sudo nerdctl --address /run/firecracker-containerd/containerd.sock --snapshotter devmapper pull docker.io/library/alpine:latest'
+
+But the current runtime boundary is important:
+
+- `nerdctl ... run --runtime aws.firecracker ...` still fails on this host with
+  a `resolv.conf` bind-mount error under `/var/lib/nerdctl/...`
+- actual Firecracker-backed task execution remains proven through:
+
+    ssh friel@10.133.183.26 'sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock run --snapshotter devmapper --runtime aws.firecracker --rm --net-host docker.io/library/busybox:latest fc-final /bin/sh -c "echo firecracker-final-ok && uname -a"'

@@ -455,3 +455,54 @@ What remains open is not basic viability. The remaining work is packaging harden
 - clean up the repo packaging so COPR can build it reproducibly
 - decide whether to keep it as a layered RPM path only or also add image-based delivery later
 - broaden beyond Fedora 43 `x86_64` only after more host proofs exist
+
+## nerdctl on Fedora 43 / IoT
+
+This path is now partially proven and packaged in this repository.
+
+What is now true on `10.133.183.26`:
+
+- `nerdctl` is layered through `rpm-ostree` from a repo-local RPM, not copied
+  into `/usr/local`
+- the packaged RPM now installs `/etc/nerdctl/nerdctl.toml` with:
+
+    cni_path = "/usr/libexec/cni"
+
+- that Fedora-specific override matters because Fedora ships the CNI binaries in
+  `/usr/libexec/cni`, while upstream nerdctl defaults to `/opt/cni/bin`
+
+What was proved on the stock `containerd` socket:
+
+- `rpm -q nerdctl` reports the layered package on the host
+- `nerdctl --version` reports `2.2.1`
+- `sudo nerdctl --address /run/containerd/containerd.sock run --rm docker.io/library/busybox:latest /bin/sh -c "echo nerdctl-containerd-default-ok && uname -a"` succeeds
+
+Observed output:
+
+- `nerdctl-containerd-default-ok`
+- `Linux ... 6.17.1-300.fc43.x86_64 ...`
+
+What was proved on the dedicated `firecracker-containerd` socket:
+
+- `sudo nerdctl --address /run/firecracker-containerd/containerd.sock images`
+  can enumerate images
+- `sudo nerdctl --address /run/firecracker-containerd/containerd.sock --snapshotter devmapper pull docker.io/library/alpine:latest`
+  succeeds
+
+What is still not working there:
+
+- `sudo nerdctl --address /run/firecracker-containerd/containerd.sock --snapshotter devmapper run --rm --runtime aws.firecracker ...`
+  still fails on this host with a runtime mount error around nerdctl's generated
+  resolver file:
+
+    failed to fulfil mount request: open /var/lib/nerdctl/.../resolv.conf: no such file or directory
+
+Current conclusion for nerdctl:
+
+- `nerdctl` is now a good immutable-host client for the stock `containerd`
+  service on Fedora IoT
+- the dedicated `firecracker-containerd` service is still best driven by
+  `firecracker-ctr` for actual microVM task execution
+- so the clean host split right now is:
+  - `nerdctl` for stock `containerd`
+  - `firecracker-ctr` for Firecracker-backed workloads

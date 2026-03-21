@@ -32,9 +32,14 @@ srpm:
 	  packaging/firecracker-containerd|\
 	  packaging/firecracker-containerd/*) \
 	    target_makefile="$(REPO_ROOT)/packaging/firecracker-containerd/.copr/Makefile" ;; \
+	  "$(REPO_ROOT)"/packaging/nerdctl|\
+	  "$(REPO_ROOT)"/packaging/nerdctl/*|\
+	  packaging/nerdctl|\
+	  packaging/nerdctl/*) \
+	    target_makefile="$(REPO_ROOT)/packaging/nerdctl/.copr/Makefile" ;; \
 	  *) \
 	    echo "Unsupported spec/subdirectory '$$subdir'." >&2; \
-	    echo "Expected packaging/bcachefs, packaging/bcachefs-kmod, packaging/zfs, packaging/zfs-kmod, or packaging/firecracker-containerd." >&2; \
+	    echo "Expected packaging/bcachefs, packaging/bcachefs-kmod, packaging/zfs, packaging/zfs-kmod, packaging/firecracker-containerd, or packaging/nerdctl." >&2; \
 	    exit 2 ;; \
 	esac; \
 	exec $(MAKE) -f "$$target_makefile" srpm outdir="$(outdir)" spec="$(spec)"
