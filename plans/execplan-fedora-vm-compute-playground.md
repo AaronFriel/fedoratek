@@ -19,7 +19,8 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
 - [x] (2026-03-20 19:50Z) Proved an initial lightweight Kubernetes path with `kind` on rootless Podman, then removed that temporary cluster after a more native K3s path was validated.
 - [x] (2026-03-20 23:55Z) Installed and validated K3s as the preferred lightweight Kubernetes path. The host now runs a single-node `k3s` server that survives reboot, returns `Ready`, and schedules a test deployment in namespace `smoke`.
 - [x] (2026-03-21 01:38Z) Wired Kata into K3s using upstream `kata-deploy` for `k3s`, fixed the required K3s containerd drop-in import, and proved RuntimeClass-backed pods on the live host. The node is labeled `katacontainers.io/kata-runtime=true`, `smoke/kata-verify-qemu` completed successfully, and a normal `smoke/kata-normal` pod also completed with a projected service-account mount and regular pod networking.
-- [ ] Decide whether `firecracker-containerd` is worth pursuing via upstream binaries or our own packaging.
+- [x] (2026-03-21 18:05Z) Proved Kata on Firecracker inside K3s on the live host. Enabled the `kata-deploy` `fc` shim, configured the K3s containerd `devmapper` snapshotter under `/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/10-devmapper.toml`, and ran `smoke/kata-fc-normal` successfully through `RuntimeClass` `kata-fc`.
+- [x] (2026-03-21 20:00Z) Proved `firecracker-containerd` on the live Fedora IoT host using an immutable-host-compatible RPM path. Layered a locally built `firecracker-containerd` RPM with `rpm-ostree`, fixed the guest rootfs packaging to use a static in-guest `agent` plus static `_submodules/runc/runc`, enabled automatic devmapper pool setup through the systemd unit, and revalidated a Firecracker-backed `busybox` workload before and after reboot.
 
 ## Surprises & Discoveries
 
@@ -59,6 +60,15 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
 - Observation: The upstream `kata-deploy` verification job has a shell bug, but the actual runtime verification pod result is still trustworthy.
   Evidence: the verification job later hit `arithmetic syntax error`, but `smoke/kata-verify-qemu` still completed successfully and a separate normal `smoke/kata-normal` pod also completed successfully.
 
+- Observation: `kata-fc` on K3s requires containerd `devmapper` to be configured in K3s's own containerd tree, not in a standalone host `/etc/containerd/config.toml`.
+  Evidence: the `fc` shim only became viable after `/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/10-devmapper.toml` defined `[plugins."io.containerd.snapshotter.v1.devmapper"]`, the thin pool `k3s-devpool` was created, `sudo k3s ctr plugins ls -d` showed `devmapper` with an exported root, and `smoke/kata-fc-normal` completed with `kata-fc-normal-ok`.
+
+- Observation: the first packaged `firecracker-containerd` guest image failed even though the host-side service and Firecracker boot path were fine.
+  Evidence: `journalctl -u firecracker-containerd` showed `/usr/local/bin/agent: /lib/x86_64-linux-gnu/libc.so.6: version "GLIBC_2.32" not found` and `GLIBC_2.34 not found` inside the Debian guest rootfs, which disappeared only after rebuilding the guest image with a static `agent` and static `runc`.
+
+- Observation: the dedicated `devmapper` thinpool must be recreated or reattached after reboot unless the service does it automatically.
+  Evidence: after reboot, `firecracker-ctr ... run` failed with `snapshotter not loaded: devmapper: invalid argument` until `firecracker-containerd-setup-devmapper` was rerun; adding `ExecStartPre=/usr/bin/firecracker-containerd-setup-devmapper` to the unit fixed the reboot path.
+
 ## Decision Log
 
 - Decision: Treat nested KVM and Cockpit/libvirt as the first milestone.
@@ -89,6 +99,14 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
   Rationale: the Fedora-packaged Kata runtime was already good enough for standalone `ctr` usage, but the clean Kubernetes RuntimeClass integration on this host came from upstream `kata-deploy` once K3s was taught to import the `config-v3.toml.d` drop-in directory.
   Date/Author: 2026-03-21 / Codex
 
+- Decision: Treat `firecracker-containerd` as an immutable-host packaging problem and prove it through a layered RPM before considering any image embedding.
+  Rationale: the software needs a specialized `containerd` plus companion artifacts, but those pieces can still be delivered in an rpm-ostree-tracked way. That gives us a reproducible host proof without falling back to mutable `/usr/local` installs.
+  Date/Author: 2026-03-21 / Codex
+
+- Decision: Package the working guest assets directly into the RPM instead of keeping a long-term `/var/lib` rootfs override.
+  Rationale: the host proof initially used a mutable runtime override only to isolate the rootfs defect. Once the defect was understood, the correct fix was to rebuild the packaged `default-rootfs.img` with a static in-guest `agent` and static `runc` so the immutable package itself contains the working guest image.
+  Date/Author: 2026-03-21 / Codex
+
 ## Outcomes & Retrospective
 
 Current outcome: the Fedora IoT host at `10.133.183.26` is now a proven compute playground across several surfaces, not just a package wishlist.
@@ -101,9 +119,9 @@ Validated capabilities on the live host:
 - Kata Containers work with the Fedora-packaged runtime stack
 - Firecracker works with the Fedora-packaged VMM plus upstream guest assets
 - K3s now serves as the host's active lightweight Kubernetes control plane and can run a test workload
-- K3s plus Kata also works through `RuntimeClass`, using upstream `kata-deploy` and the K3s containerd drop-in import path
+- K3s plus Kata also works through `RuntimeClass`, using upstream `kata-deploy`, the K3s containerd drop-in import path, and a K3s-local `devmapper` snapshotter for `kata-fc`
 
-The main remaining unresolved item is packaging scope, not host capability: `firecracker-containerd` still looks likely to require upstream binaries or our own RPM work.
+The host now covers the full intended surface: nested KVM/libvirt, Cockpit, Podman, standalone Kata, standalone Firecracker, K3s, K3s plus Kata on both QEMU and Firecracker, and a dedicated Firecracker-backed `containerd` stack delivered through `rpm-ostree`. The main remaining work is packaging hardening and COPR automation for `firecracker-containerd`, not basic host capability.
 
 ## Concrete Steps
 
@@ -228,9 +246,55 @@ Validate K3s plus Kata:
       - name: test
         image: docker.io/library/busybox:latest
         command: ["/bin/sh", "-c", "echo kata-normal-ok && uname -a && cat /var/run/secrets/kubernetes.io/serviceaccount/namespace && sleep 1"]
+
+Validate Kata on Firecracker on K3s:
+
+    ssh friel@10.133.183.26 'sudo tee /var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/10-devmapper.toml >/dev/null <<"EOF"
+    [plugins."io.containerd.snapshotter.v1.devmapper"]
+      pool_name = "k3s-devpool"
+      root_path = "/var/lib/rancher/k3s/agent/containerd/devmapper"
+      base_image_size = "2GB"
+      discard_blocks = true
     EOF'
 
-    ssh friel@10.133.183.26 'KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl -n smoke wait --for=condition=Ready pod/kata-normal --timeout=180s || true; KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl -n smoke logs kata-normal'
+    ssh friel@10.133.183.26 'sudo dmsetup info k3s-devpool || true; sudo k3s ctr plugins ls -d | sed -n "/devmapper/,+8p"'
+
+    # render kata-deploy with the `fc` shim enabled and `fc:devmapper` mapping
+    # then apply the hook-filtered manifest, as above
+
+    ssh friel@10.133.183.26 'KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get runtimeclass | grep kata-fc'
+    ssh friel@10.133.183.26 'KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl -n smoke logs kata-fc-normal'
+
+Build and validate the dedicated `firecracker-containerd` RPM locally:
+
+    cd /home/friel/c/aaronfriel/fedoratek
+    scripts/local_copr_build.sh --release 43 packaging/firecracker-containerd
+
+    # expected artifacts include an RPM named like:
+    # firecracker-containerd-0-0.3.gitYYYYMMDD.<commit>.fc43.x86_64.rpm
+
+Layer the resulting RPM onto the IoT host in an rpm-ostree-tracked deployment:
+
+    scp .scratch/firecracker-containerd-validate-*/firecracker-containerd-*.x86_64.rpm friel@10.133.183.26:/var/tmp/
+    ssh friel@10.133.183.26 "sudo rpm-ostree install /var/tmp/firecracker-containerd-*.rpm"
+    ssh friel@10.133.183.26 "sudo systemctl reboot"
+
+If a previously enabled third-party repo breaks the layering transaction because rpm-ostree cannot import its key on the live root, disable that repo before retrying. On this host the problematic repo was `/etc/yum.repos.d/rancher-k3s-common.repo`, which was temporarily set to `enabled=0`.
+
+Validate the dedicated service and snapshotter after reboot:
+
+    ssh friel@10.133.183.26 "systemctl is-active firecracker-containerd"
+    ssh friel@10.133.183.26 "sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock plugins ls | grep devmapper"
+    ssh friel@10.133.183.26 "sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock images pull --snapshotter devmapper docker.io/library/busybox:latest"
+    ssh friel@10.133.183.26 "sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock run --snapshotter devmapper --runtime aws.firecracker --rm --net-host docker.io/library/busybox:latest fc-smoke /bin/sh -c 'echo firecracker-containerd-ok && uname -a'"
+
+Reboot once more to prove persistence:
+
+    ssh friel@10.133.183.26 "sudo systemctl reboot"
+    ssh friel@10.133.183.26 "systemctl is-active firecracker-containerd"
+    ssh friel@10.133.183.26 "sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock run --snapshotter devmapper --runtime aws.firecracker --rm --net-host docker.io/library/busybox:latest fc-final /bin/sh -c 'echo firecracker-final-ok && uname -a'"
+
+    ssh friel@10.133.183.26 "KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl -n smoke wait --for=condition=Ready pod/kata-normal --timeout=180s || true; KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl -n smoke logs kata-normal"
 
 ## Validation and Acceptance
 
@@ -245,10 +309,11 @@ This plan is complete when all of the following are true on `10.133.183.26`:
 7. A Firecracker guest can boot successfully on the host.
 8. K3s comes up after reboot, reports a `Ready` control-plane node, and can run a user workload.
 9. K3s plus Kata works through `RuntimeClass`, including a normal pod path rather than only a stripped-down verification pod.
+10. `firecracker-containerd` is installed via `rpm-ostree`, its dedicated service comes up after reboot with the `devmapper` snapshotter active, and `firecracker-ctr ... run` prints `firecracker-final-ok` from a Firecracker-backed container.
 
 ## Idempotence and Recovery
 
-The baseline inspection commands are safe to rerun. `rpm-ostree install --allow-inactive` is safe for iterative host layering, but each successful layering transaction requires a reboot before runtime validation. If `libvirtd` is not the active service name on Fedora IoT, fall back to enabling the split libvirt sockets (`virtqemud.socket`, `virtnetworkd.socket`, and `virtstoraged.socket`) rather than forcing a non-existent unit. Firecracker smoke tests are easiest to keep disposable by storing guest assets and logs under `/var/tmp`. K3s installation is idempotent enough to rerun through the installer, but on this host the SELinux file context correction with `restorecon` is also required. If the first boot after enabling K3s experiences a large `chronyd` clock step, restart `k3s` once time is stable before diagnosing addon failures further. For `kata-deploy`, do not apply raw Helm-rendered hook resources with `kubectl apply`; render the chart, drop documents that contain `helm.sh/hook`, and then apply the remaining manifest so the cleanup hook does not delete the RBAC objects you still need.
+The baseline inspection commands are safe to rerun. `rpm-ostree install --allow-inactive` is safe for iterative host layering, but each successful layering transaction requires a reboot before runtime validation. If `libvirtd` is not the active service name on Fedora IoT, fall back to enabling the split libvirt sockets (`virtqemud.socket`, `virtnetworkd.socket`, and `virtstoraged.socket`) rather than forcing a non-existent unit. Firecracker smoke tests are easiest to keep disposable by storing guest assets and logs under `/var/tmp`. K3s installation is idempotent enough to rerun through the installer, but on this host the SELinux file context correction with `restorecon` is also required. If the first boot after enabling K3s experiences a large `chronyd` clock step, restart `k3s` once time is stable before diagnosing addon failures further. For `kata-deploy`, do not apply raw Helm-rendered hook resources with `kubectl apply`; render the chart, drop documents that contain `helm.sh/hook`, and then apply the remaining manifest so the cleanup hook does not delete the RBAC objects you still need. For `firecracker-containerd`, the dedicated service can safely rerun `firecracker-containerd-setup-devmapper` on every start; that is the recovery path that made the `devmapper` snapshotter survive reboot. If rpm-ostree layering fails because a third-party repo key cannot be imported on the live root, disable that repo and retry the transaction rather than force-writing keys into the immutable deployment.
 
 ## Artifacts and Notes
 
@@ -280,6 +345,16 @@ Representative validated runtime facts from the host:
     Linux kata-normal 6.18.15 ...
     smoke
 
+    $ systemctl is-active firecracker-containerd
+    active
+
+    $ sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock plugins ls | grep devmapper
+    io.containerd.snapshotter.v1 devmapper linux/amd64 ok
+
+    $ sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock run --snapshotter devmapper --runtime aws.firecracker --rm --net-host docker.io/library/busybox:latest fc-final /bin/sh -c "echo firecracker-final-ok && uname -a"
+    firecracker-final-ok
+    Linux microvm 4.14.174 #2 SMP Wed Jul 14 11:47:24 UTC 2021 x86_64 GNU/Linux
+
 Repo-query gaps that still require a later decision if they become mandatory:
 
     firecracker-containerd
@@ -288,6 +363,6 @@ Repo-query gaps that still require a later decision if they become mandatory:
 
 ## Interfaces and Dependencies
 
-This work depends on SSH access to `10.133.183.26`, working `rpm-ostree` layering on the host, and the Hyper-V outer VM being configured to expose virtualization extensions to the Fedora guest. The first-class host interfaces now validated are `cockpit.socket` for remote management, libvirt's `qemu:///system` connection for nested virtual machines, the `podman` CLI for plain containers, the Fedora-packaged Kata runtime stack through `containerd-shim-kata-v2`, the `firecracker` binary for microVM experiments, and the K3s API plus kubeconfig at `/etc/rancher/k3s/k3s.yaml` for the native lightweight Kubernetes path. Kata is now also proven inside K3s through `RuntimeClass` and upstream `kata-deploy`, with K3s configured to import runtime drop-ins from `config-v3.toml.d`. The main open dependency is whether future `firecracker-containerd` work should accept upstream binaries or invest in packaging.
+This work depends on SSH access to `10.133.183.26`, working `rpm-ostree` layering on the host, and the Hyper-V outer VM being configured to expose virtualization extensions to the Fedora guest. The first-class host interfaces now validated are `cockpit.socket` for remote management, libvirt's `qemu:///system` connection for nested virtual machines, the `podman` CLI for plain containers, the Fedora-packaged Kata runtime stack through `containerd-shim-kata-v2`, the `firecracker` binary for microVM experiments, the K3s API plus kubeconfig at `/etc/rancher/k3s/k3s.yaml` for the native lightweight Kubernetes path, and the dedicated `firecracker-containerd` service plus `/run/firecracker-containerd/containerd.sock` for Firecracker-backed containers. Kata is now also proven inside K3s through `RuntimeClass` and upstream `kata-deploy`, with K3s configured to import runtime drop-ins from `config-v3.toml.d` and to activate a K3s-local `devmapper` snapshotter for `kata-fc`. The `firecracker-containerd` dependency story is now concrete rather than hypothetical: Fedora 43 still lacks a repo-native package, so this repository carries its own packaging and constrains the default build target to Fedora 43 `x86_64` until more host proofs exist.
 
-Change note: This plan started from a baseline package survey, graduated through package and runtime proofs, moved from a temporary `kind` smoke cluster to K3s, and now records the exact K3s+Kata RuntimeClass path that worked on the host.
+Change note: This plan started from a baseline package survey, graduated through package and runtime proofs, moved from a temporary `kind` smoke cluster to K3s, then recorded the exact K3s+Kata RuntimeClass paths that worked on the host for both `kata-qemu` and `kata-fc`. It now also records the completed `firecracker-containerd` host proof: layered RPM delivery, static guest asset packaging, automatic `devmapper` setup on service start, and successful post-reboot Firecracker-backed container execution.

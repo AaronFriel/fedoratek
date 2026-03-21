@@ -1,0 +1,12 @@
+{
+  "firecracker_binary_path": "/usr/bin/firecracker",
+  "kernel_image_path": "/usr/lib/firecracker-containerd/runtime/default-vmlinux.bin",
+  "kernel_args": "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules systemd.unified_cgroup_hierarchy=0 systemd.journald.forward_to_console systemd.unit=firecracker.target init=/sbin/overlay-init",
+  "root_drive": "/usr/lib/firecracker-containerd/runtime/default-rootfs.img",
+  "cpu_template": "T2",
+  "log_levels": ["debug"],
+  "shim_base_dir": "/var/lib/firecracker-containerd/shim-base",
+  "jailer": {
+    "runc_binary_path": "/usr/bin/runc"
+  }
+}

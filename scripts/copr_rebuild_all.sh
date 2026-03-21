@@ -10,6 +10,7 @@ COPR_CHROOTS_BCACHEFS_TOOLS="${COPR_CHROOTS_BCACHEFS_TOOLS:-fedora-43-x86_64,fed
 COPR_CHROOTS_BCACHEFS_KMOD="${COPR_CHROOTS_BCACHEFS_KMOD:-fedora-43-x86_64,fedora-43-aarch64}"
 COPR_CHROOTS_ZFS_DKMS="${COPR_CHROOTS_ZFS_DKMS:-}"
 COPR_CHROOTS_ZFS_KMOD="${COPR_CHROOTS_ZFS_KMOD:-fedora-43-x86_64,fedora-43-aarch64,fedora-44-x86_64}"
+COPR_CHROOTS_FIRECRACKER_CONTAINERD="${COPR_CHROOTS_FIRECRACKER_CONTAINERD:-fedora-43-x86_64}"
 
 PROJECTS=()
 case "${COPR_TARGET_PROJECTS}" in
@@ -32,6 +33,7 @@ package_chroots() {
     bcachefs-kmod) printf '%s\n' "${COPR_CHROOTS_BCACHEFS_KMOD}" ;;
     zfs-dkms) printf '%s\n' "${COPR_CHROOTS_ZFS_DKMS}" ;;
     zfs-kmod) printf '%s\n' "${COPR_CHROOTS_ZFS_KMOD}" ;;
+    firecracker-containerd) printf '%s\n' "${COPR_CHROOTS_FIRECRACKER_CONTAINERD}" ;;
     *)
       echo "Unknown package ${pkg}" >&2
       exit 2
@@ -39,7 +41,7 @@ package_chroots() {
   esac
 }
 
-PACKAGES=(bcachefs-tools bcachefs-kmod zfs-dkms zfs-kmod)
+PACKAGES=(bcachefs-tools bcachefs-kmod zfs-dkms zfs-kmod firecracker-containerd)
 
 for project in "${PROJECTS[@]}"; do
   for pkg in "${PACKAGES[@]}"; do

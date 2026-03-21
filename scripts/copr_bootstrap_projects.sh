@@ -46,7 +46,7 @@ create_project_if_needed() {
   echo "Creating project: ${owner_project}"
   copr-cli create "${project_name}" "${args[@]}" \
     --enable-net "${COPR_ENABLE_NET}" \
-    --description "Fedora bcachefs + ZFS module builds (${project_name})" \
+    --description "Fedora bcachefs + ZFS + Firecracker runtime builds (${project_name})" \
     --instructions "Enable with: dnf copr enable ${owner_project}" \
     --homepage "${COPR_REPO_URL}" \
     --contact "${COPR_REPO_URL}"
@@ -92,6 +92,7 @@ bootstrap_project() {
   ensure_scm_package "${owner_project}" "bcachefs-kmod" "packaging/bcachefs-kmod" "${webhook_mode}"
   ensure_scm_package "${owner_project}" "zfs-dkms" "packaging/zfs" "${webhook_mode}"
   ensure_scm_package "${owner_project}" "zfs-kmod" "packaging/zfs-kmod" "${webhook_mode}"
+  ensure_scm_package "${owner_project}" "firecracker-containerd" "packaging/firecracker-containerd" "${webhook_mode}"
 }
 
 case "${COPR_BOOTSTRAP_TARGET_PROJECTS}" in

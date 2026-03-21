@@ -11,7 +11,7 @@ For Fedora 43 and Fedora IoT, the paths are not equal.
 - `kata-containers` is repo-native and proven on the host. We did not need a custom kernel module or a custom RPM to run a Kata-backed workload.
 - `firecracker` itself is repo-native enough for lab work and is now proven on the host with a real guest boot.
 - `k3s` is the current preferred lightweight Kubernetes path for this host. It is not Fedora-repo-native, but it is now proven on the host and is a better long-lived fit than the earlier `kind` smoke cluster.
-- `firecracker-containerd` is the outlier. It is not present in the Fedora 43 repos checked on the host, and upstream documents that it needs a specialized `containerd` build. That is the one path where we should currently assume upstream binaries or our own packaging work.
+- `firecracker-containerd` is still the packaging outlier. It is not present in the Fedora 43 repos checked on the host, but we now have a working repo-local RPM path for Fedora 43 `x86_64` and proved it on the host through `rpm-ostree` layering.
 
 ## What the current host already has
 
@@ -343,3 +343,115 @@ Representative host checks used for the current conclusions:
 - Kata Containers upstream repository: https://github.com/kata-containers/kata-containers
 - Firecracker upstream getting started documentation: https://github.com/firecracker-microvm/firecracker/blob/main/docs/getting-started.md
 - Host-local Fedora 43 package metadata and live host validation gathered from `dnf repoquery` and direct runtime checks on `10.133.183.26`
+
+## Kata on Firecracker on K3s on Fedora 43 / IoT
+
+This path is now proven on the live host.
+
+After the earlier `kata-qemu` RuntimeClass path was working, the remaining question was whether the same K3s host could run Kata with the Firecracker hypervisor rather than QEMU.
+
+What changed on the host:
+
+- upstream `kata-deploy` was re-rendered with the `fc` shim enabled for `k3s`
+- K3s still needed the existing containerd template import:
+
+    imports = ["/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/*.toml"]
+
+- K3s containerd also needed a working `devmapper` snapshotter configured in its own drop-in directory, not in a separate standalone `containerd` config:
+
+    /var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/10-devmapper.toml
+
+with host-local contents:
+
+    [plugins."io.containerd.snapshotter.v1.devmapper"]
+      pool_name = "k3s-devpool"
+      root_path = "/var/lib/rancher/k3s/agent/containerd/devmapper"
+      base_image_size = "2GB"
+      discard_blocks = true
+
+- the backing thin-pool was created on the host as `k3s-devpool`
+- after restarting `k3s`, `sudo k3s ctr plugins ls -d` showed the `devmapper` plugin active rather than skipped
+
+One important practical discovery is that `kata-deploy` had already laid down the Firecracker-specific Kata artifacts under `/opt/kata/`, including:
+
+- `/opt/kata/bin/firecracker`
+- `/opt/kata/bin/jailer`
+- `/opt/kata/share/defaults/kata-containers/configuration-fc.toml`
+
+That meant the missing piece was not “find Firecracker binaries.” It was “make K3s containerd provide the snapshotter and runtime wiring that the `fc` shim expects.”
+
+What was proved on `10.133.183.26`:
+
+- the `kata-fc` RuntimeClass exists:
+
+    kata-fc   kata-fc
+
+- a normal Kubernetes pod using `runtimeClassName: kata-fc` was scheduled successfully:
+
+    smoke/kata-fc-normal
+
+- the pod reached `Running`, received a normal pod IP, kept the projected service-account volume mounted, and then completed successfully
+
+Observed pod logs:
+
+- `kata-fc-normal-ok`
+- `Linux kata-fc-normal 6.18.15 ...`
+- `smoke`
+
+Observed K3s log evidence also showed the Firecracker subsystem being used during sandbox setup.
+
+Conclusion for Kata on Firecracker:
+
+- Kata on Firecracker works on this Fedora IoT 43 host under K3s
+- the critical requirement was K3s-local `devmapper` snapshotter configuration plus the upstream `kata-deploy` `fc` shim
+- this is not a pure Fedora-package-only path, but it is also not an ad hoc manual binary-copy path on the host
+
+## Firecracker with containerd on Fedora 43: immutable-host delivery note
+
+Fedora 43 still does not provide a repo-native `firecracker-containerd` package, and upstream still requires a specialized `containerd` build. That part of the earlier conclusion remains true.
+
+What changed is the delivery answer.
+
+We now have a working repo-local RPM path for Fedora 43 `x86_64`, and that path was exercised on the live Fedora IoT host at `10.133.183.26` rather than only off-host.
+
+What the proven package path does:
+
+- builds the specialized `firecracker-containerd` binaries from upstream source
+- rebuilds the guest rootfs with a statically linked in-guest `agent`
+- rebuilds the guest `runc` as a static binary from `_submodules/runc`
+- ships those guest assets under `/usr/lib/firecracker-containerd/runtime`
+- layers the resulting RPM with `rpm-ostree`
+- starts a dedicated `firecracker-containerd` service on the host
+- recreates or reattaches the `fc-dev-thinpool` automatically on service start via `ExecStartPre=/usr/bin/firecracker-containerd-setup-devmapper`
+
+Why the static guest binaries mattered:
+
+The first packaged guest image failed even though the host-side service, Firecracker VMM, and snapshotter plumbing were otherwise correct. The decisive journal evidence from the host was:
+
+- `/usr/local/bin/agent: /lib/x86_64-linux-gnu/libc.so.6: version "GLIBC_2.32" not found`
+- `/usr/local/bin/agent: /lib/x86_64-linux-gnu/libc.so.6: version "GLIBC_2.34" not found`
+
+That proved the earlier guest image had the wrong linkage model for the packaged Debian rootfs. Rebuilding the guest image with a static `agent` and static `runc` fixed the in-guest startup path.
+
+What is now proven on the live Fedora IoT host:
+
+- `firecracker-containerd` was installed through `rpm-ostree` from a locally built RPM
+- `systemctl is-active firecracker-containerd` reports `active`
+- `firecracker-ctr --address /run/firecracker-containerd/containerd.sock plugins ls` shows the `devmapper` snapshotter `ok`
+- `firecracker-ctr ... images pull --snapshotter devmapper docker.io/library/busybox:latest` succeeds
+- `firecracker-ctr ... run --snapshotter devmapper --runtime aws.firecracker --rm --net-host docker.io/library/busybox:latest ...` succeeds and prints:
+  - `firecracker-final-ok`
+  - `Linux microvm 4.14.174 ...`
+- the same workflow still succeeds after reboot because the service now recreates or reattaches the loop-backed thinpool on startup
+
+So the current answer is:
+
+- Fedora 43 still does not give us a stock `firecracker-containerd` package
+- but we do not need to fall back to mutable `/usr/local` host installs either
+- a repo-tracked RPM path works and fits the immutable-host model better than ad hoc binary copying
+
+What remains open is not basic viability. The remaining work is packaging hardening:
+
+- clean up the repo packaging so COPR can build it reproducibly
+- decide whether to keep it as a layered RPM path only or also add image-based delivery later
+- broaden beyond Fedora 43 `x86_64` only after more host proofs exist

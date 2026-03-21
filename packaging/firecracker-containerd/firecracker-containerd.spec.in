@@ -1,0 +1,92 @@
+Name:           firecracker-containerd
+Version:        @VERSION@
+Release:        @RELEASE@%{?dist}
+Summary:        Dedicated Firecracker-backed containerd runtime stack
+License:        ASL 2.0
+URL:            https://github.com/firecracker-microvm/firecracker-containerd
+Source0:        @SOURCE_TARBALL@
+Source1:        default-rootfs.img
+Source2:        rootfs-debug.img
+Source3:        default-vmlinux.bin
+Source4:        firecracker-containerd.service
+Source5:        firecracker-containerd-config.toml
+Source6:        firecracker-runtime.json
+Source7:        firecracker-containerd-setup-devmapper
+
+BuildRequires:  gcc
+BuildRequires:  golang
+BuildRequires:  make
+BuildRequires:  systemd-rpm-macros
+
+Requires:       bc
+Requires:       coreutils
+Requires:       device-mapper
+Requires:       firecracker
+Requires:       runc
+Requires:       systemd
+Requires:       util-linux
+
+ExclusiveArch:  x86_64 aarch64
+
+%description
+firecracker-containerd is a dedicated containerd build with Firecracker control
+plugins and companion runtime binaries. This package installs it as a parallel
+runtime stack with its own service, socket path, and state directories so it
+can be layered onto immutable Fedora hosts without replacing the distro
+containerd package.
+
+%prep
+%autosetup -n @SOURCE_DIR@
+cp -f %{SOURCE1} tools/image-builder/rootfs.img
+cp -f %{SOURCE2} tools/image-builder/rootfs-debug.img
+cp -f %{SOURCE3} default-vmlinux.bin
+
+%build
+make -C firecracker-control/cmd/containerd firecracker-containerd firecracker-ctr
+make -C runtime containerd-shim-aws-firecracker
+make -C snapshotter demux-snapshotter http-address-resolver
+
+%install
+install -D -m 0755 firecracker-control/cmd/containerd/firecracker-containerd %{buildroot}%{_bindir}/firecracker-containerd
+install -D -m 0755 firecracker-control/cmd/containerd/firecracker-ctr %{buildroot}%{_bindir}/firecracker-ctr
+install -D -m 0755 runtime/containerd-shim-aws-firecracker %{buildroot}%{_bindir}/containerd-shim-aws-firecracker
+install -D -m 0755 snapshotter/demux-snapshotter %{buildroot}%{_bindir}/demux-snapshotter
+install -D -m 0755 snapshotter/http-address-resolver %{buildroot}%{_bindir}/http-address-resolver
+install -D -m 0644 %{SOURCE4} %{buildroot}%{_unitdir}/firecracker-containerd.service
+install -D -m 0644 %{SOURCE5} %{buildroot}%{_sysconfdir}/firecracker-containerd/config.toml
+install -D -m 0644 %{SOURCE6} %{buildroot}%{_sysconfdir}/containerd/firecracker-runtime.json
+install -D -m 0755 %{SOURCE7} %{buildroot}%{_bindir}/firecracker-containerd-setup-devmapper
+install -D -m 0400 default-vmlinux.bin %{buildroot}%{_prefix}/lib/firecracker-containerd/runtime/default-vmlinux.bin
+install -D -m 0400 tools/image-builder/rootfs.img %{buildroot}%{_prefix}/lib/firecracker-containerd/runtime/default-rootfs.img
+install -D -m 0400 tools/image-builder/rootfs-debug.img %{buildroot}%{_prefix}/lib/firecracker-containerd/runtime/rootfs-debug.img
+
+%post
+%systemd_post firecracker-containerd.service
+
+%preun
+%systemd_preun firecracker-containerd.service
+
+%postun
+%systemd_postun_with_restart firecracker-containerd.service
+
+%files
+%license LICENSE
+%doc README.md docs/getting-started.md docs/quickstart.md
+%{_bindir}/firecracker-containerd
+%{_bindir}/firecracker-ctr
+%{_bindir}/containerd-shim-aws-firecracker
+%{_bindir}/demux-snapshotter
+%{_bindir}/http-address-resolver
+%{_bindir}/firecracker-containerd-setup-devmapper
+%config(noreplace) %{_sysconfdir}/firecracker-containerd/config.toml
+%config(noreplace) %{_sysconfdir}/containerd/firecracker-runtime.json
+%{_unitdir}/firecracker-containerd.service
+%dir %{_prefix}/lib/firecracker-containerd
+%dir %{_prefix}/lib/firecracker-containerd/runtime
+%{_prefix}/lib/firecracker-containerd/runtime/default-vmlinux.bin
+%{_prefix}/lib/firecracker-containerd/runtime/default-rootfs.img
+%{_prefix}/lib/firecracker-containerd/runtime/rootfs-debug.img
+
+%changelog
+* Sat Mar 21 2026 Codex <codex@example.invalid> - @VERSION@-@RELEASE@
+- Package firecracker-containerd as a parallel immutable-host runtime stack.

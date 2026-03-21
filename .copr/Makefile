@@ -27,9 +27,14 @@ srpm:
 	  packaging/zfs-kmod|\
 	  packaging/zfs-kmod/*) \
 	    target_makefile="$(REPO_ROOT)/packaging/zfs-kmod/.copr/Makefile" ;; \
+	  "$(REPO_ROOT)"/packaging/firecracker-containerd|\
+	  "$(REPO_ROOT)"/packaging/firecracker-containerd/*|\
+	  packaging/firecracker-containerd|\
+	  packaging/firecracker-containerd/*) \
+	    target_makefile="$(REPO_ROOT)/packaging/firecracker-containerd/.copr/Makefile" ;; \
 	  *) \
 	    echo "Unsupported spec/subdirectory '$$subdir'." >&2; \
-	    echo "Expected packaging/bcachefs, packaging/bcachefs-kmod, packaging/zfs, or packaging/zfs-kmod." >&2; \
+	    echo "Expected packaging/bcachefs, packaging/bcachefs-kmod, packaging/zfs, packaging/zfs-kmod, or packaging/firecracker-containerd." >&2; \
 	    exit 2 ;; \
 	esac; \
 	exec $(MAKE) -f "$$target_makefile" srpm outdir="$(outdir)" spec="$(spec)"

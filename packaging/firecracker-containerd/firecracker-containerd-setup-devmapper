@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+POOL_NAME="${1:-fc-dev-thinpool}"
+DATA_SIZE="${FICD_DM_DATA_SIZE:-20G}"
+META_SIZE="${FICD_DM_META_SIZE:-2G}"
+BASE_DIR="${FICD_DM_DIR:-/var/lib/firecracker-containerd/snapshotter/devmapper}"
+
+mkdir -p "$BASE_DIR"
+
+create_loop() {
+  local path="$1"
+  local size="$2"
+  if [[ ! -f "$path" ]]; then
+    truncate -s "$size" "$path"
+  fi
+  local dev
+  dev="$(losetup --output NAME --noheadings --associated "$path" || true)"
+  if [[ -z "$dev" ]]; then
+    dev="$(losetup --find --show "$path")"
+  fi
+  printf '%s\n' "$dev"
+}
+
+if dmsetup info "$POOL_NAME" >/dev/null 2>&1; then
+  echo "thin pool $POOL_NAME already exists"
+  exit 0
+fi
+
+data_dev="$(create_loop "$BASE_DIR/data" "$DATA_SIZE")"
+meta_dev="$(create_loop "$BASE_DIR/metadata" "$META_SIZE")"
+sector_size=512
+data_size_bytes="$(blockdev --getsize64 -q "$data_dev")"
+length_sectors="$(bc <<< "$data_size_bytes/$sector_size")"
+table="0 ${length_sectors} thin-pool ${meta_dev} ${data_dev} 128 32768 1 skip_block_zeroing"
+
+dmsetup create "$POOL_NAME" --table "$table"
+echo "created thin pool $POOL_NAME using $data_dev and $meta_dev"

@@ -1,0 +1,27 @@
+[Unit]
+Description=Firecracker-backed dedicated containerd service
+Documentation=https://github.com/firecracker-microvm/firecracker-containerd
+Wants=network-online.target
+After=network-online.target local-fs.target
+ConditionPathExists=/etc/firecracker-containerd/config.toml
+ConditionPathExists=/etc/containerd/firecracker-runtime.json
+ConditionPathExists=/usr/lib/firecracker-containerd/runtime/default-rootfs.img
+ConditionPathExists=/usr/lib/firecracker-containerd/runtime/default-vmlinux.bin
+
+[Service]
+Type=notify
+NotifyAccess=all
+ExecStartPre=/usr/bin/install -d -m 0755 /var/lib/firecracker-containerd/shim-base
+ExecStartPre=/usr/bin/install -d -m 0755 /var/lib/firecracker-containerd/snapshotter/devmapper
+ExecStartPre=/usr/bin/firecracker-containerd-setup-devmapper
+Environment=FIRECRACKER_CONTAINERD_RUNTIME_CONFIG_PATH=/etc/containerd/firecracker-runtime.json
+ExecStart=/usr/bin/firecracker-containerd --config /etc/firecracker-containerd/config.toml
+Restart=on-failure
+RestartSec=3
+Delegate=yes
+KillMode=process
+LimitNOFILE=1048576
+TasksMax=infinity
+
+[Install]
+WantedBy=multi-user.target
