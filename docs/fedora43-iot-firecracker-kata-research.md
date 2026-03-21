@@ -161,6 +161,78 @@ Conclusion for Kata:
 - no out-of-tree kernel module is needed
 - the packaged default config is QEMU-backed, not Firecracker-backed
 
+### Kata Containers on K3s on Fedora 43 / IoT
+
+This path is now also proven on the host, but the final working route was not the initial Fedora-packaged guest-artifact path.
+
+What failed first:
+
+- manually wiring K3s to Fedora's packaged Kata artifacts reached the runtime, but Kubernetes sandbox creation failed
+- the key runtime log from the failed packaged-artifact path was:
+
+    createContainer failed ... Establishing a D-Bus connection ... No such file or directory
+
+- unpacking the generated guest initrd showed `dbus.socket` and `dbus-daemon`, but not the service-side `dbus.service` wiring that the guest needed for the Kubernetes sandbox path
+
+That was enough to conclude that the repo-native Fedora guest-artifact path was not the clean K3s integration path on this host, even though plain `ctr` and standalone Kata checks worked.
+
+The working K3s integration used upstream `kata-deploy` instead.
+
+What was required on the host before `kata-deploy` could succeed:
+
+- K3s had to use a containerd template that imports the K3s drop-in directory
+- the required line in `/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl` was:
+
+    imports = ["/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/*.toml"]
+
+- after adding that import, `k3s` had to be restarted so the rendered `config.toml` picked it up
+
+Important deployment discovery:
+
+- applying the upstream Helm chart output directly with `kubectl apply` is wrong if the rendered manifest still contains Helm hook resources
+- doing that caused the chart's cleanup hook job to run immediately and delete the `kata-deploy` service account and RBAC
+- the clean approaches are either:
+  - a real `helm install`, or
+  - rendering the chart and filtering out all documents that contain `helm.sh/hook` before applying them with `kubectl`
+
+What was proved on `10.133.183.26` after the K3s template import fix and the upstream `kata-deploy` install:
+
+- the upstream installer DaemonSet came up successfully:
+
+    kube-system/kata-deploy-vtdsn   1/1   Running
+
+- the node was labeled by the installer:
+
+    katacontainers.io/kata-runtime=true
+
+- the upstream verification pod completed successfully:
+
+    smoke/kata-verify-qemu   Completed
+
+- a stronger normal-pod proof also succeeded with regular pod networking and the projected service-account volume still mounted:
+
+    smoke/kata-normal   1/1 Running
+
+Observed output from that normal pod:
+
+- `kata-normal-ok`
+- `Linux kata-normal 6.18.15 ...`
+- `smoke`
+
+That final proof is important because it shows the working K3s+Kata path is not limited to the earlier stripped-down `hostNetwork` plus `automountServiceAccountToken: false` workaround pod.
+
+One upstream chart bug was still observed:
+
+- the chart's verification job script tripped over a shell arithmetic bug while parsing event counts
+- even with that bug, the actual `kata-verify-qemu` pod still completed successfully, so the host-level K3s + Kata capability is proven
+
+Conclusion for K3s + Kata:
+
+- K3s on Fedora IoT 43 can run Kata-backed pods on this host
+- the reliable path today uses upstream `kata-deploy`, not just the Fedora-packaged Kata guest artifacts
+- the host-side K3s containerd template must import `config-v3.toml.d/*.toml`
+- if we document or automate this path later, we should treat the upstream Helm chart as the source of truth and avoid raw `kubectl apply` of unfiltered hook resources
+
 ### Plain Firecracker on Fedora 43
 
 This path is repo-native enough for lab work and is proven.
