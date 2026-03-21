@@ -2,7 +2,7 @@
 
 This note captures what was actually proved on the Fedora IoT host at `10.133.183.26`, plus the remaining packaging and support questions for the less repo-native paths.
 
-The original question was whether these paths are repo-native on Fedora 43, or whether we would need to build RPMs ourselves.
+The original question was whether these paths are repo-native on Fedora 43, or whether we would need to build RPMs ourselves. The newer canonical host runbook now lives under `docs/compute-host/`, especially `docs/compute-host/fedora-iot-43-host.md`; this file remains the broader research and rationale note.
 
 ## Short answer
 
@@ -12,6 +12,8 @@ For Fedora 43 and Fedora IoT, the paths are not equal.
 - `firecracker` itself is repo-native enough for lab work and is now proven on the host with a real guest boot.
 - `k3s` is the current preferred lightweight Kubernetes path for this host. It is not Fedora-repo-native, but it is now proven on the host and is a better long-lived fit than the earlier `kind` smoke cluster.
 - `firecracker-containerd` is still the packaging outlier. It is not present in the Fedora 43 repos checked on the host, but we now have a working repo-local RPM path for Fedora 43 `x86_64` and proved it on the host through `rpm-ostree` layering.
+- direct `nerdctl` plus Cloud Hypervisor is now also proven on the host, but through the stock `containerd` service rather than through K3s. The key fix is a `containerd.service` environment drop-in that points `KATA_CONF_FILE` at the Cloud Hypervisor Kata config.
+- `runwasi` is not present in the Fedora 43 repos checked on the host, but we now have a working repo-local RPM path for the Wasmtime shim and proved the official `wasi-demo-app` workload on K3s through RuntimeClass `wasmtime`.
 
 ## What the current host already has
 
@@ -506,3 +508,30 @@ Current conclusion for nerdctl:
 - so the clean host split right now is:
   - `nerdctl` for stock `containerd`
   - `firecracker-ctr` for Firecracker-backed workloads
+
+
+### runwasi on K3s on Fedora 43 / IoT
+
+This path is now proven on the live host through Wasmtime. Fedora 43 did not provide a repo-native `runwasi` package when checked on the host, so the working immutable-host delivery model is a repo-local RPM named `runwasi-wasmtime` that installs `/usr/bin/containerd-shim-wasmtime-v1`.
+
+The K3s wiring is a containerd drop-in at `/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/20-runwasi-wasmtime.toml` with:
+
+    [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.wasmtime]
+    runtime_type = "io.containerd.wasmtime.v1"
+    runtime_path = "/usr/bin/containerd-shim-wasmtime-v1"
+
+The host already exposed a `RuntimeClass` named `wasmtime`, so after restarting `k3s` the official upstream demo deployment ran successfully with image `ghcr.io/containerd/runwasi/wasi-demo-app:latest`. The observed logs matched the upstream example song text.
+
+### Direct Cloud Hypervisor containers through nerdctl on Fedora 43 / IoT
+
+This path is also now proven on the live host. The direct `nerdctl` path does not use the K3s CRI runtime-handler mapping; it uses the stock `containerd` service and the Kata shim directly.
+
+The working host fix is a systemd drop-in at `/etc/systemd/system/containerd.service.d/10-kata-clh.conf` that sets:
+
+    KATA_CONF_FILE=/opt/kata/share/defaults/kata-containers/runtimes/clh/configuration-clh.toml
+
+After restarting `containerd`, the host can run:
+
+    sudo nerdctl --address /run/containerd/containerd.sock run --rm --net host --runtime io.containerd.run.kata.v2 docker.io/library/busybox:latest /bin/sh -c "echo nerdctl-kata-clh-ok && uname -a"
+
+The proof is stronger than just the `uname` output: while the container was running, the host process list showed `/var/opt/kata/bin/cloud-hypervisor`.

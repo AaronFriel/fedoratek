@@ -94,6 +94,7 @@ bootstrap_project() {
   ensure_scm_package "${owner_project}" "zfs-kmod" "packaging/zfs-kmod" "${webhook_mode}"
   ensure_scm_package "${owner_project}" "firecracker-containerd" "packaging/firecracker-containerd" "${webhook_mode}"
   ensure_scm_package "${owner_project}" "nerdctl" "packaging/nerdctl" "${webhook_mode}"
+  ensure_scm_package "${owner_project}" "runwasi-wasmtime" "packaging/runwasi-wasmtime" "${webhook_mode}"
 }
 
 case "${COPR_BOOTSTRAP_TARGET_PROJECTS}" in

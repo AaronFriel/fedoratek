@@ -21,6 +21,9 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
 - [x] (2026-03-21 01:38Z) Wired Kata into K3s using upstream `kata-deploy` for `k3s`, fixed the required K3s containerd drop-in import, and proved RuntimeClass-backed pods on the live host. The node is labeled `katacontainers.io/kata-runtime=true`, `smoke/kata-verify-qemu` completed successfully, and a normal `smoke/kata-normal` pod also completed with a projected service-account mount and regular pod networking.
 - [x] (2026-03-21 18:05Z) Proved Kata on Firecracker inside K3s on the live host. Enabled the `kata-deploy` `fc` shim, configured the K3s containerd `devmapper` snapshotter under `/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/10-devmapper.toml`, and ran `smoke/kata-fc-normal` successfully through `RuntimeClass` `kata-fc`.
 - [x] (2026-03-21 20:00Z) Proved `firecracker-containerd` on the live Fedora IoT host using an immutable-host-compatible RPM path. Layered a locally built `firecracker-containerd` RPM with `rpm-ostree`, fixed the guest rootfs packaging to use a static in-guest `agent` plus static `_submodules/runc/runc`, enabled automatic devmapper pool setup through the systemd unit, and revalidated a Firecracker-backed `busybox` workload before and after reboot.
+- [x] (2026-03-21 23:28Z) Fixed the direct `nerdctl` plus Cloud Hypervisor path on the live host by scoping `KATA_CONF_FILE=/opt/kata/share/defaults/kata-containers/runtimes/clh/configuration-clh.toml` to the stock `containerd` systemd unit. A direct `nerdctl --address /run/containerd/containerd.sock run --rm --net host --runtime io.containerd.run.kata.v2 ...` workload now survives reboot and launches `cloud-hypervisor` instead of falling back to QEMU.
+- [x] (2026-03-21 23:40Z) Added an immutable-host `runwasi-wasmtime` RPM path, layered it with `rpm-ostree`, wired K3s to `io.containerd.wasmtime.v1` through `/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/20-runwasi-wasmtime.toml`, and proved the official `ghcr.io/containerd/runwasi/wasi-demo-app:latest` deployment through RuntimeClass `wasmtime`.
+- [x] (2026-03-21 23:43Z) Started the dedicated `docs/compute-host/` tree so the canonical host wiring and proofs live under a stable path instead of being spread only across the older research note and chat transcripts.
 
 ## Surprises & Discoveries
 
@@ -69,6 +72,12 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
 - Observation: the dedicated `devmapper` thinpool must be recreated or reattached after reboot unless the service does it automatically.
   Evidence: after reboot, `firecracker-ctr ... run` failed with `snapshotter not loaded: devmapper: invalid argument` until `firecracker-containerd-setup-devmapper` was rerun; adding `ExecStartPre=/usr/bin/firecracker-containerd-setup-devmapper` to the unit fixed the reboot path.
 
+- Observation: direct `nerdctl` plus Kata initially failed for the wrong reason: guest networking on stock `containerd`, not Cloud Hypervisor itself.
+  Evidence: the first direct `nerdctl --runtime io.containerd.run.kata.v2` attempt timed out waiting for `NetPciMatcher` uevents in the Kata agent; rerunning with `--net host` succeeded once `KATA_CONF_FILE` pointed stock `containerd` at the CLH config, and `ps -ef` then showed `/var/opt/kata/bin/cloud-hypervisor`.
+
+- Observation: the host already had `wasmtime`, `spin`, `slight`, `wasmedge`, `wasmer`, `lunatic`, and `wws` RuntimeClasses from the existing K3s manifests, but they were not meaningful proofs by themselves.
+  Evidence: before the `runwasi` work, `/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/` contained no Wasm runtime mapping and no Wasm shim binary existed on the host; only after layering `runwasi-wasmtime` and adding `20-runwasi-wasmtime.toml` did the official `wasi-demo-app` deployment roll out.
+
 ## Decision Log
 
 - Decision: Treat nested KVM and Cockpit/libvirt as the first milestone.
@@ -107,6 +116,18 @@ The goal is to turn the Fedora VM at `10.133.183.26` into a flexible test host t
   Rationale: the host proof initially used a mutable runtime override only to isolate the rootfs defect. Once the defect was understood, the correct fix was to rebuild the packaged `default-rootfs.img` with a static in-guest `agent` and static `runc` so the immutable package itself contains the working guest image.
   Date/Author: 2026-03-21 / Codex
 
+- Decision: Scope Cloud Hypervisor as the default direct Kata hypervisor only for the stock `containerd` service, not for K3s.
+  Rationale: the user wanted direct `nerdctl` plus CLH, while K3s already had separate `kata-qemu`, `kata-fc`, and `kata-clh` RuntimeClasses. A `containerd.service` drop-in with `KATA_CONF_FILE=.../configuration-clh.toml` gives direct CLH containers without disturbing the K3s runtime-handler matrix.
+  Date/Author: 2026-03-21 / Codex
+
+- Decision: Treat `runwasi` as an immutable-host binary-delivery problem and package the upstream Wasmtime shim as its own RPM before wiring K3s.
+  Rationale: Fedora 43 did not package `runwasi`, but the upstream release artifact is a small self-contained shim. Packaging it as `runwasi-wasmtime` preserves the rpm-ostree discipline while keeping the K3s runtime mapping explicit on the host.
+  Date/Author: 2026-03-21 / Codex
+
+- Decision: Start `docs/compute-host/` as the canonical home for host-level compute wiring and proofs.
+  Rationale: the existing `docs/fedora43-iot-firecracker-kata-research.md` is useful background, but the host now has enough proven paths that we need a stable runbook directory for exact files, commands, and observed outputs.
+  Date/Author: 2026-03-21 / Codex
+
 ## Outcomes & Retrospective
 
 Current outcome: the Fedora IoT host at `10.133.183.26` is now a proven compute playground across several surfaces, not just a package wishlist.
@@ -121,7 +142,7 @@ Validated capabilities on the live host:
 - K3s now serves as the host's active lightweight Kubernetes control plane and can run a test workload
 - K3s plus Kata also works through `RuntimeClass`, using upstream `kata-deploy`, the K3s containerd drop-in import path, and a K3s-local `devmapper` snapshotter for `kata-fc`
 
-The host now covers the full intended surface: nested KVM/libvirt, Cockpit, Podman, standalone Kata, standalone Firecracker, K3s, K3s plus Kata on both QEMU and Firecracker, and a dedicated Firecracker-backed `containerd` stack delivered through `rpm-ostree`. The main remaining work is packaging hardening and COPR automation for `firecracker-containerd`, not basic host capability.
+The host now covers the full intended surface: nested KVM/libvirt, Cockpit, Podman, standalone Kata, standalone Firecracker, direct `nerdctl` plus Cloud Hypervisor on stock `containerd`, K3s, K3s plus Kata on QEMU, Firecracker, and Cloud Hypervisor, a dedicated Firecracker-backed `containerd` stack delivered through `rpm-ostree`, and a proven `runwasi` Wasmtime path on K3s. The remaining work in this area is breadth, not viability: more Wasm shims, broader packaging/COPR automation, and deeper performance or density comparisons between `kata-qemu`, `kata-clh`, `kata-fc`, and Wasm runtimes.
 
 ## Concrete Steps
 
@@ -411,3 +432,5 @@ But the current runtime boundary is important:
 - actual Firecracker-backed task execution remains proven through:
 
     ssh friel@10.133.183.26 'sudo firecracker-ctr --address /run/firecracker-containerd/containerd.sock run --snapshotter devmapper --runtime aws.firecracker --rm --net-host docker.io/library/busybox:latest fc-final /bin/sh -c "echo firecracker-final-ok && uname -a"'
+
+Change note (2026-03-21 / Codex): Updated the plan after proving direct `nerdctl` plus Cloud Hypervisor on stock `containerd`, adding the `runwasi-wasmtime` RPM path and K3s `wasmtime` RuntimeClass proof, and starting the dedicated `docs/compute-host/` tree as the canonical host runbook location.

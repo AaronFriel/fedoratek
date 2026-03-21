@@ -37,9 +37,14 @@ srpm:
 	  packaging/nerdctl|\
 	  packaging/nerdctl/*) \
 	    target_makefile="$(REPO_ROOT)/packaging/nerdctl/.copr/Makefile" ;; \
+	  "$(REPO_ROOT)"/packaging/runwasi-wasmtime|\
+	  "$(REPO_ROOT)"/packaging/runwasi-wasmtime/*|\
+	  packaging/runwasi-wasmtime|\
+	  packaging/runwasi-wasmtime/*) \
+	    target_makefile="$(REPO_ROOT)/packaging/runwasi-wasmtime/.copr/Makefile" ;; \
 	  *) \
 	    echo "Unsupported spec/subdirectory '$$subdir'." >&2; \
-	    echo "Expected packaging/bcachefs, packaging/bcachefs-kmod, packaging/zfs, packaging/zfs-kmod, packaging/firecracker-containerd, or packaging/nerdctl." >&2; \
+	    echo "Expected packaging/bcachefs, packaging/bcachefs-kmod, packaging/zfs, packaging/zfs-kmod, packaging/firecracker-containerd, packaging/nerdctl, or packaging/runwasi-wasmtime." >&2; \
 	    exit 2 ;; \
 	esac; \
 	exec $(MAKE) -f "$$target_makefile" srpm outdir="$(outdir)" spec="$(spec)"

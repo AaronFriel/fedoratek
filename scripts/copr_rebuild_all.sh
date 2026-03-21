@@ -12,6 +12,7 @@ COPR_CHROOTS_ZFS_DKMS="${COPR_CHROOTS_ZFS_DKMS:-}"
 COPR_CHROOTS_ZFS_KMOD="${COPR_CHROOTS_ZFS_KMOD:-fedora-43-x86_64,fedora-43-aarch64,fedora-44-x86_64}"
 COPR_CHROOTS_FIRECRACKER_CONTAINERD="${COPR_CHROOTS_FIRECRACKER_CONTAINERD:-fedora-43-x86_64}"
 COPR_CHROOTS_NERDCTL="${COPR_CHROOTS_NERDCTL:-fedora-43-x86_64}"
+COPR_CHROOTS_RUNWASI_WASMTIME="${COPR_CHROOTS_RUNWASI_WASMTIME:-fedora-43-x86_64}"
 
 PROJECTS=()
 case "${COPR_TARGET_PROJECTS}" in
@@ -36,6 +37,7 @@ package_chroots() {
     zfs-kmod) printf '%s\n' "${COPR_CHROOTS_ZFS_KMOD}" ;;
     firecracker-containerd) printf '%s\n' "${COPR_CHROOTS_FIRECRACKER_CONTAINERD}" ;;
     nerdctl) printf '%s\n' "${COPR_CHROOTS_NERDCTL}" ;;
+    runwasi-wasmtime) printf '%s\n' "${COPR_CHROOTS_RUNWASI_WASMTIME}" ;;
     *)
       echo "Unknown package ${pkg}" >&2
       exit 2
@@ -43,7 +45,7 @@ package_chroots() {
   esac
 }
 
-PACKAGES=(bcachefs-tools bcachefs-kmod zfs-dkms zfs-kmod firecracker-containerd nerdctl)
+PACKAGES=(bcachefs-tools bcachefs-kmod zfs-dkms zfs-kmod firecracker-containerd nerdctl runwasi-wasmtime)
 
 for project in "${PROJECTS[@]}"; do
   for pkg in "${PACKAGES[@]}"; do

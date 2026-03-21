@@ -1,0 +1,33 @@
+%global debug_package %{nil}
+Name:           runwasi-wasmtime
+Version:        @VERSION@
+Release:        @RELEASE@%{?dist}
+Summary:        containerd runwasi shim for Wasmtime
+License:        Apache-2.0
+URL:            https://github.com/containerd/runwasi
+Source0:        containerd-shim-wasmtime-v%{version}-x86_64-linux-musl.tar.gz
+
+%description
+runwasi-wasmtime packages the official upstream containerd shim for Wasmtime so
+immutable Fedora hosts can layer a repo-tracked WebAssembly runtime instead of
+relying on ad hoc binary drops. The package installs the shim binary used by
+containerd and K3s runtime handlers such as io.containerd.wasmtime.v1.
+
+%prep
+%setup -q -T -D -c
+%{__tar} -xzf %{SOURCE0}
+
+%build
+
+%install
+install -D -m 0755 containerd-shim-wasmtime-v1 %{buildroot}%{_bindir}/containerd-shim-wasmtime-v1
+install -D -m 0644 containerd-shim-wasmtime-v1.pem %{buildroot}%{_datadir}/doc/runwasi-wasmtime/containerd-shim-wasmtime-v1.pem
+install -D -m 0644 containerd-shim-wasmtime-v1.sig %{buildroot}%{_datadir}/doc/runwasi-wasmtime/containerd-shim-wasmtime-v1.sig
+
+%files
+%doc %{_datadir}/doc/runwasi-wasmtime
+%{_bindir}/containerd-shim-wasmtime-v1
+
+%changelog
+* Sat Mar 21 2026 Codex <codex@example.invalid> - @VERSION@-@RELEASE@
+- Package the upstream runwasi Wasmtime shim for immutable Fedora hosts.
